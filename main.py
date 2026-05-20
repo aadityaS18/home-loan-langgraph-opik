@@ -22,6 +22,17 @@
 #approved  missing docs  rejected
 
 from graph import build_home_loan_graph
+import opik
+from opik import track
+
+opik.configure(
+    project_name="home-loan-langgraph"
+)
+
+@track(name="run_home_loan_application")
+def run_home_loan_application(app,application):
+    """Parent trace for one full home-loan application run."""
+    return app.invoke(application)
 
 
 def get_documents_from_user():
@@ -53,6 +64,25 @@ def get_documents_from_user():
     return documents
 
 
+
+def get_int_input(prompt):
+    """
+    Keeps asking until the user enters a valid number.
+    If user presses Enter without typing anything, it uses 0.
+    """
+
+    while True:
+        value = input(prompt)
+
+        if value == "":
+            return 0
+
+        try:
+            return int(value)
+        except ValueError:
+            print("Please enter a valid number.")
+
+
 def get_user_application():
     """
     This function manually takes home loan application details
@@ -62,12 +92,12 @@ def get_user_application():
     print("\n--- ENTER HOME LOAN APPLICATION DETAILS ---")
 
     name = input("Enter applicant name: ")
-    age = int(input("Enter age: "))
-    income = int(input("Enter monthly income: "))
+    age = get_int_input("Enter age: ")
+    income = get_int_input("Enter monthly income: ")
     employment_type = input("Enter employment type, for example salaried/self-employed: ")
-    loan_amount = int(input("Enter requested loan amount: "))
-    credit_score = int(input("Enter credit score: "))
-    existing_emi = int(input("Enter existing EMI amount: "))
+    loan_amount = get_int_input("Enter requested loan amount: ")
+    credit_score = get_int_input("Enter credit score: ")
+    existing_emi = get_int_input("Enter existing EMI amount: ")
 
     documents = get_documents_from_user()
 
@@ -126,7 +156,7 @@ def main():
         application = get_user_application()
 
         # Run application through LangGraph
-        result = app.invoke(application)
+        result = run_home_loan_application(app, application)
 
         # Print result
         print_result(result)
