@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.env/
+.venv/
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+
+# Mac
+.DS_Store
+
+# Anaconda/cache
+.ipynb_checkpoints/
