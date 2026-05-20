@@ -4,9 +4,11 @@
 
 from state import HomeLoanState
 
+from opik import track 
+from state import HomeLoanState
 
 # Node 1: Collect user details
-
+@track(name="collect_user_details")
 def collect_user_details(state:HomeLoanState):
     """
     This is the first step.
@@ -22,6 +24,7 @@ def collect_user_details(state:HomeLoanState):
 # Node 2:Check basic eligibility 
 
 
+@track(name="check_eligibility")
 def check_eligibility(state:HomeLoanState):
     """
     This step check basic rules:
@@ -48,6 +51,7 @@ def check_eligibility(state:HomeLoanState):
 # Node 3: Check EMI affordibilty 
 
 
+@track(name="check_affordability")
 def check_affordability(state: HomeLoanState):
     """
     Checks whether the applicant can afford another EMI.
@@ -72,6 +76,7 @@ def check_affordability(state: HomeLoanState):
 
 # Node 4:Check doucments
 
+@track(name="check_documents")
 def check_documents(state: HomeLoanState):
     """
     Checks whether all required home-loan documents are submitted.
@@ -106,6 +111,7 @@ def check_documents(state: HomeLoanState):
 
 # Node5 :Risk Assessment
 
+@track(name="risk_assessment")
 def risk_assessment(state: HomeLoanState):
     """
     Checks risk level using credit score.
@@ -133,6 +139,7 @@ def risk_assessment(state: HomeLoanState):
 
 # node 6: Final decison 
 
+@track(name="make_decision")
 def make_decision(state:HomeLoanState):
 
     """
@@ -162,6 +169,7 @@ def make_decision(state:HomeLoanState):
 
 # Approved response 
 
+@track(name="approved_response")
 def approved_response(state:HomeLoanState):
     """
     This response is shown if the application is approved.
@@ -177,6 +185,7 @@ def approved_response(state:HomeLoanState):
 
 # Missing documents response
 
+@track(name="missing_docs_response")
 def missing_docs_response(state:HomeLoanState):
     """
     This response is shown if some documents are missing"""
@@ -192,7 +201,7 @@ def missing_docs_response(state:HomeLoanState):
 
 
 
-
+@track(name="rejected_response")
 def rejected_response(state: HomeLoanState):
     """
     This response is shown if the application is rejected.
@@ -208,7 +217,7 @@ def rejected_response(state: HomeLoanState):
 
 
 
-
+@track(name="route_decision")
 def route_decision(state: HomeLoanState):
     """
     This function tells LangGraph which final node to go to.
