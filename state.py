@@ -6,24 +6,46 @@ from typing import TypedDict,List
 # Class defines what data our home loan workflow will store
 
 class HomeLoanState(TypedDict):
-    name:str
-    age:int
-    income:float
-    employment_type:str
+    name: str
+    age: int
+    employment_type: str
+    monthly_income: float
+    work_experience_years: float
+    credit_score: int
+    existing_emi: float
 
+    # Loan requirement
+    loan_amount: float
+    interest_rate: float
+    tenure_years: int
+    loan_purpose: str
 
-    # Loan-related info
-    loan_amount:int
-    credit_score:int
-    existing_emi:int
+    # Property details
+    property_value: float
+    property_type: str
+    property_location: str
+    property_age: int
+    construction_status: str
+    legal_clearance_status: str
+    valuation_status: str
 
+    # Documents
+    submitted_documents: List[str]
+    required_documents: List[str]
+    missing_documents: List[str]
+    document_status: str
 
-    documents:List[str]
+    # Calculated values
+    proposed_emi: float
+    ltv_ratio: float
+    dti_ratio: float
+    foir_ratio: float
 
-    # Fields will be updated by different workflow steps
+    # Final decision
+    risk_level: str
+    underwriting_status: str
+    decision: str
+    decision_reasons: List[str]
+    customer_explanation: str
+    officer_summary: str
 
-    eligibility_status:str
-    risk_status:str
-    decision:str
-    message:str
-    
