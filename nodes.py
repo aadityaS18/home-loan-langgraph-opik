@@ -24,7 +24,7 @@ def collect_user_details(state:HomeLoanState):
 # Node 2:Check basic eligibility 
 
 
-@track(name="check_eligibility")
+@track(name="check_eligibility")# Opik’s @track decorator to each LangGraph node, so every workflow step becomes a span inside Opik.
 def check_eligibility(state:HomeLoanState):
     """
     This step check basic rules:

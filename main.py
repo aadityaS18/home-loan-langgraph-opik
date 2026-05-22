@@ -26,10 +26,10 @@ import opik
 from opik import track
 
 opik.configure(
-    project_name="home-loan-langgraph"
+    project_name="home-loan-langgraph"# connects the project to opik cloud under home-loan-langgraph 
 )
 
-@track(name="run_home_loan_application")
+@track(name="run_home_loan_application")# this tracks one complete home-loan application run as parent trace
 def run_home_loan_application(app,application):
     """Parent trace for one full home-loan application run."""
     return app.invoke(application)
