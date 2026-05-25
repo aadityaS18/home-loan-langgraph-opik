@@ -22,12 +22,15 @@
 #approved  missing docs  rejected
 
 from graph import build_home_loan_graph
+from opik.integrations.langchain import OpikTracer
 import opik
 from opik import track
 
 opik.configure(
-    project_name="home-loan-langgraph"# connects the project to opik cloud under home-loan-langgraph 
+    use_local="True",
+    project_name="home-loan-langgraph"# connects the project to opik cloud under home-loan-langgraph
 )
+opik_tracer = OpikTracer(project_name="home-loan-langgraph")
 
 @track(name="run_home_loan_application")# this tracks one complete home-loan application run as parent trace
 def run_home_loan_application(app,application):

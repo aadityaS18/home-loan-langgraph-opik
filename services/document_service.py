@@ -33,5 +33,7 @@ def generated_documents(employment_type:str,property_type:str)->list[str]:
 
 @opik.track(name="find_missing_documents")
 
+#Compares required documents with submitted documents.
+
 def find_missing_documents(required_documents:list[str],submitted_documents:list[str])->list[str]:
     return [doc for doc in required_documents if doc not in submitted_documents]

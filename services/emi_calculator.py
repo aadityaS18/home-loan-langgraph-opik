@@ -1,5 +1,8 @@
 import opik 
 @opik.track(name="calculate_emi")
+
+
+
 def calculate_emi(loan_amount:float,annual_interest_rate:float,tenure_years:int)->float:
     monthly_rate=annual_interest_rate/(12 *100)
     total_months=tenure_years*12

@@ -56,6 +56,6 @@ def run_underwriting_rules(state:dict)->tuple[str,str,list[str]]:
         reasons.append("Applicant meets the main home-loan eligibility criteria.")   
 
 
-    return decison,risk_level,reasons
+    return decision,risk_level,reasons
 
 

@@ -4,75 +4,45 @@
 #Spans:each workflow step
 
 from langgraph.graph import StateGraph, END
-
 from state import HomeLoanState
 
-from nodes import (
-    collect_user_details,
-    check_eligibility,
-    check_affordability,
-    check_documents,
-    risk_assessment,
-    make_decision,
-    approved_response,
-    missing_docs_response,
-    rejected_response,
-    route_decision,
-)
+from nodes.financial_nodes import calculate_financial_metrics
+from nodes.document_nodes import verify_documents
+from nodes.decision_nodes import underwriting_decision, decision_router
+from nodes.llm_nodes import generate_customer_explanation
 
 
 def build_home_loan_graph():
-    """
-    Builds the LangGraph workflow for the home loan journey.
-    """
+    workflow = StateGraph(HomeLoanState)
 
-    workflow = StateGraph(HomeLoanState)# over here this creates the langgraph worflow using homeloanstate
+    workflow.add_node("calculate_financial_metrics", calculate_financial_metrics)
+    workflow.add_node("verify_documents", verify_documents)
+    workflow.add_node("underwriting_decision", underwriting_decision)
 
-    # Add all nodes
+    workflow.add_node("generate_loan_offer", generate_customer_explanation)
+    workflow.add_node("request_missing_documents", generate_customer_explanation)
+    workflow.add_node("manual_review_response", generate_customer_explanation)
+    workflow.add_node("rejected_response", generate_customer_explanation)
 
-    # over here each home-loan steo is added as a node.Edges define the flow between steps  and  to tell if application is rejected,accpted or missing documents
-    workflow.add_node("collect_user_details", collect_user_details)
-    workflow.add_node("check_eligibility", check_eligibility)# this tell when we use check_eleigibilty if theels functn to run it and checks if it seleigible
-    workflow.add_node("check_affordability", check_affordability)
-    workflow.add_node("check_documents", check_documents)
-    workflow.add_node("risk_assessment", risk_assessment)
-    workflow.add_node("make_decision", make_decision)
+    workflow.set_entry_point("calculate_financial_metrics")
 
-    # used here to add each step of home-loan journey into langgraph workflow
-    workflow.add_node("approved_response", approved_response)
-    workflow.add_node("missing_docs_response", missing_docs_response)
-    workflow.add_node("rejected_response", rejected_response)
+    workflow.add_edge("calculate_financial_metrics", "verify_documents")
+    workflow.add_edge("verify_documents", "underwriting_decision")
 
-    # Starting point
-    workflow.set_entry_point("collect_user_details")
-
-    # is used to connect two nodes and define the order in which they run 
-    workflow.add_edge("collect_user_details", "check_eligibility")#after checkeligible is complete it goes to the next check affordbility 
-    workflow.add_edge("check_eligibility", "check_affordability")
-    workflow.add_edge("check_affordability", "check_documents")
-    workflow.add_edge("check_documents", "risk_assessment")
-    workflow.add_edge("risk_assessment", "make_decision")
-
-    # Conditional routing after decision
     workflow.add_conditional_edges(
-        "make_decision",
-        route_decision,
+        "underwriting_decision",
+        decision_router,
         {
-            "approved_response": "approved_response",
-            "missing_docs_response": "missing_docs_response",
+            "generate_loan_offer": "generate_loan_offer",
+            "request_missing_documents": "request_missing_documents",
+            "manual_review_response": "manual_review_response",
             "rejected_response": "rejected_response",
         },
     )
 
-    # End points
-    workflow.add_edge("approved_response", END)
-    workflow.add_edge("missing_docs_response", END)
+    workflow.add_edge("generate_loan_offer", END)
+    workflow.add_edge("request_missing_documents", END)
+    workflow.add_edge("manual_review_response", END)
     workflow.add_edge("rejected_response", END)
 
     return workflow.compile()
-
-
-
-
-
-
