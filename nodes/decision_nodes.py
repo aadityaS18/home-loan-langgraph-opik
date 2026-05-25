@@ -7,7 +7,7 @@ from services.rule_engine import run_underwriting_rules
 
 @opik.track(name="underwritting_decision")
 
-def underwrtiting_decision(state:HomeLoanState):
+def underwriting_decision(state:HomeLoanState):
     """
     Langgraph node: Runs rule-based underwriting and updates final decison fields """
 
@@ -17,7 +17,7 @@ def underwrtiting_decision(state:HomeLoanState):
 
     state["decision"]=decision
     state["risk_level"]=risk_level
-    state["decision_reasons"]=reasons
+    state["decision_reasons"]=resons
     state["underwriting_status"]=decision
 
     return state
