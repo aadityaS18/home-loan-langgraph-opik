@@ -3,7 +3,10 @@
 #Trace: full application run 
 #Spans:each workflow step
 
+f# graph.py
+
 from langgraph.graph import StateGraph, END
+
 from state import HomeLoanState
 
 from nodes.financial_nodes import calculate_financial_metrics
@@ -13,22 +16,31 @@ from nodes.llm_nodes import generate_customer_explanation
 
 
 def build_home_loan_graph():
+    """
+    Builds the upgraded LangGraph home-loan journey workflow.
+    """
+
     workflow = StateGraph(HomeLoanState)
 
+    # Main workflow nodes
     workflow.add_node("calculate_financial_metrics", calculate_financial_metrics)
     workflow.add_node("verify_documents", verify_documents)
     workflow.add_node("underwriting_decision", underwriting_decision)
 
+    # Final response nodes use the LLM explanation node
     workflow.add_node("generate_loan_offer", generate_customer_explanation)
     workflow.add_node("request_missing_documents", generate_customer_explanation)
     workflow.add_node("manual_review_response", generate_customer_explanation)
     workflow.add_node("rejected_response", generate_customer_explanation)
 
+    # Starting point
     workflow.set_entry_point("calculate_financial_metrics")
 
+    # Main flow
     workflow.add_edge("calculate_financial_metrics", "verify_documents")
     workflow.add_edge("verify_documents", "underwriting_decision")
 
+    # Conditional decision routing
     workflow.add_conditional_edges(
         "underwriting_decision",
         decision_router,
@@ -40,6 +52,7 @@ def build_home_loan_graph():
         },
     )
 
+    # End points
     workflow.add_edge("generate_loan_offer", END)
     workflow.add_edge("request_missing_documents", END)
     workflow.add_edge("manual_review_response", END)
