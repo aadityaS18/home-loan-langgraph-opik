@@ -186,7 +186,9 @@ jupyterlab_server @ file:///Users/builder/cbouss/perseverance-python-buildout/cr
 keras==3.14.0
 keyring @ file:///private/var/folders/sy/f16zz6x50xz3113nwtb9bvq00000gp/T/abs_e21nr4004l/croot/keyring_1709632517485/work
 kiwisolver @ file:///Users/builder/cbouss/perseverance-python-buildout/croot/kiwisolver_1699242237265/work
+langchain==1.3.1
 langchain-core==1.4.0
+langchain-openai==1.2.2
 langchain-protocol==0.0.15
 langgraph==1.2.0
 langgraph-checkpoint==4.1.0
