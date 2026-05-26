@@ -228,6 +228,10 @@ def print_result(result: dict):
     print(result["customer_explanation"])
 
 
+    print("\n--- OFFICER SUMMARY ---")
+    print(result["officer_summary"])
+
+
 def main():
     app = build_home_loan_graph()
 

@@ -3,7 +3,7 @@
 #Trace: full application run 
 #Spans:each workflow step
 
-f# graph.py
+# graph.py
 
 from langgraph.graph import StateGraph, END
 
@@ -13,7 +13,7 @@ from nodes.financial_nodes import calculate_financial_metrics
 from nodes.document_nodes import verify_documents
 from nodes.decision_nodes import underwriting_decision, decision_router
 from nodes.llm_nodes import generate_customer_explanation
-
+from nodes.llm_nodes import generate_customer_explanation, generate_officer_summary
 
 def build_home_loan_graph():
     """
@@ -32,7 +32,7 @@ def build_home_loan_graph():
     workflow.add_node("request_missing_documents", generate_customer_explanation)
     workflow.add_node("manual_review_response", generate_customer_explanation)
     workflow.add_node("rejected_response", generate_customer_explanation)
-
+    workflow.add_node("generate_officer_summary", generate_officer_summary)
     # Starting point
     workflow.set_entry_point("calculate_financial_metrics")
 
@@ -57,5 +57,11 @@ def build_home_loan_graph():
     workflow.add_edge("request_missing_documents", END)
     workflow.add_edge("manual_review_response", END)
     workflow.add_edge("rejected_response", END)
+
+    workflow.add_edge("generate_loan_offer", "generate_officer_summary")
+    workflow.add_edge("request_missing_documents", "generate_officer_summary")
+    workflow.add_edge("manual_review_response", "generate_officer_summary")
+    workflow.add_edge("rejected_response", "generate_officer_summary")
+    workflow.add_edge("generate_officer_summary", END)
 
     return workflow.compile()
