@@ -7,7 +7,7 @@ from opik.integrations.langchain import OpikTracer
 from state import HomeLoanState
 from prompts.explanation_prompt import EXPLANATION_PROMPT
 
-opik_tracer=OpikTracer(project_name="home-loan_langgraph")
+opik_tracer=OpikTracer(project_name="home-loan-langgraph")
 
 llm=ChatOllama(
     model="llama3.2:3b",

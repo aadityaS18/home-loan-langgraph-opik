@@ -1,18 +1,33 @@
 # main.py
-
+import os
 import opik
 from opik.integrations.langchain import OpikTracer
+
+from graph import build_home_loan_graph
+
+
+os.environ.setdefault("OPIK_BASE_URL", "http://localhost:5293/api")
+os.environ.setdefault("OPIK_PROJECT_NAME", "home-loan-langgraph")
+
+opik_tracer = OpikTracer(project_name="home-loan-langgraph")
+
+@opik.track(name="home-loan-journey", project_name="home-loan-langgraph")
+def run_home_loan_application(app, application):
+    return app.invoke(
+        application,
+        config={"callbacks": [opik_tracer]},
+    )
 
 from graph import build_home_loan_graph
 from services.document_service import generate_required_documents
 
 
-opik.configure(
-    use_local=True,
-    project_name="home-loan-langgraph",
-)
+#opik.configure(
+    #use_local=True,
+   # project_name="home-loan-langgraph",
+#)
 
-opik_tracer = OpikTracer(project_name="home-loan-langgraph")
+#opik_tracer = OpikTracer(project_name="home-loan-langgraph")
 
 
 def get_string_input(prompt: str, default: str = "") -> str:
