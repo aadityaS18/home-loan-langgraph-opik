@@ -1,6 +1,6 @@
 import opik
 
-@opik.track(nam="calculate_dti")
+@opik.track(name="calculate_dti")
 
 def calculate_dti(existing_emi:float,proposed_emi:float,monthly_income:float)->float:
     if monthly_income<=0:
