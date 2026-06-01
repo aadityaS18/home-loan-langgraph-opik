@@ -228,7 +228,7 @@ def print_result(result: dict):
     print(result["customer_explanation"])
 
 
-    print("\n--- OFFICER SUMMARY ---")
+    print("\n--- OFFICER SUMMARY (EXPERIMENTAL - UNDER REFINEMENT) ---")
     print(result["officer_summary"])
 
 
