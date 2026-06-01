@@ -1,4 +1,6 @@
 
+# nodes/llm_nodes.py
+
 import opik
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
@@ -8,66 +10,105 @@ from state import HomeLoanState
 from prompts.explanation_prompt import EXPLANATION_PROMPT
 from prompts.officer_summary_prompt import OFFICER_SUMMARY_PROMPT
 
-opik_tracer=OpikTracer(project_name="home-loan-langgraph")
 
-llm=ChatOllama(
+PROJECT_NAME = "home-loan-langgraph"
+
+
+# Opik tracer used for tracing LangChain + Ollama calls.
+opik_tracer = OpikTracer(project_name=PROJECT_NAME)
+
+
+# Local Ollama model.
+# The model explains results only; it does not make underwriting decisions.
+llm = ChatOllama(
     model="llama3.2:3b",
     temperature=0,
-    num_predict=250
-
+    num_predict=400,
 )
 
-@opik.track(name="generate_customer_explanation")
 
-def generate_customer_explanation(state:HomeLoanState):
+@opik.track(
+    name="generate_customer_explanation",
+    project_name=PROJECT_NAME,
+)
+def generate_customer_explanation(state: HomeLoanState):
     """
-    LangGraph +Langchain node using local Ollama model
-    
-    The rule engine makes the loan decision.
-    The LLM only explains the decision"""
+    Generates a customer-facing explanation using LangChain + Ollama.
+
+    Important:
+    - The rule engine already made the decision.
+    - The LLM only explains supplied facts and recommended actions.
+    """
 
     prompt = ChatPromptTemplate.from_template(EXPLANATION_PROMPT)
     chain = prompt | llm
 
-    response=chain.invoke(
-
+    response = chain.invoke(
         {
             "name": state["name"],
             "decision": state["decision"],
             "risk_level": state["risk_level"],
-            "decision_reasons": ", ".join(state["decision_reasons"]),
+
+            "decision_reasons": "\n".join(
+                f"- {reason}" for reason in state["decision_reasons"]
+            )
+            if state["decision_reasons"]
+            else "- None",
+
+            "positive_factors": "\n".join(
+                f"- {factor}" for factor in state["positive_factors"]
+            )
+            if state["positive_factors"]
+            else "- None",
+
+            "risk_flags": "\n".join(
+                f"- {flag}" for flag in state["risk_flags"]
+            )
+            if state["risk_flags"]
+            else "- None",
+
+            "recommended_actions": "\n".join(
+                f"- {action}" for action in state["recommended_actions"]
+            )
+            if state["recommended_actions"]
+            else "- None",
+
             "proposed_emi": state["proposed_emi"],
             "ltv_ratio": state["ltv_ratio"],
             "dti_ratio": state["dti_ratio"],
             "foir_ratio": state["foir_ratio"],
+
             "missing_documents": ", ".join(state["missing_documents"])
             if state["missing_documents"]
             else "None",
-
-
         },
-        config={"callbacks":[opik_tracer]}
+        config={"callbacks": [opik_tracer]},
     )
 
-    state["customer_explanation"]=response.content
+    state["customer_explanation"] = response.content
 
     return state
 
 
+@opik.track(
+    name="generate_officer_summary",
+    project_name=PROJECT_NAME,
+)
+def generate_officer_summary(state: HomeLoanState):
+    """
+    Generates an internal summary for a loan officer using LangChain + Ollama.
 
+    Important:
+    - The LLM must only format supplied underwriting facts.
+    - It must not calculate or reinterpret risk levels independently.
+    """
 
+    prompt = ChatPromptTemplate.from_template(OFFICER_SUMMARY_PROMPT)
+    chain = prompt | llm
 
-@opik.track(name="generate_officer_summary")
-
-def generate_officer_summary(state:HomeLoanState):
-    """Generates an internal loan officer summary using Ollama"""
-    
-    prompt=ChatPromptTemplate.from_template(OFFICER_SUMMARY_PROMPT)
-    chain=prompt | llm
-
-    response=chain.invoke(
+    response = chain.invoke(
         {
-
+            # Applicant details
             "name": state["name"],
             "age": state["age"],
             "employment_type": state["employment_type"],
@@ -75,10 +116,14 @@ def generate_officer_summary(state:HomeLoanState):
             "work_experience_years": state["work_experience_years"],
             "credit_score": state["credit_score"],
             "existing_emi": state["existing_emi"],
+
+            # Loan details
             "loan_amount": state["loan_amount"],
             "interest_rate": state["interest_rate"],
             "tenure_years": state["tenure_years"],
             "loan_purpose": state["loan_purpose"],
+
+            # Property details
             "property_value": state["property_value"],
             "property_type": state["property_type"],
             "property_location": state["property_location"],
@@ -86,19 +131,51 @@ def generate_officer_summary(state:HomeLoanState):
             "construction_status": state["construction_status"],
             "legal_clearance_status": state["legal_clearance_status"],
             "valuation_status": state["valuation_status"],
+
+            # Financial metrics
             "proposed_emi": state["proposed_emi"],
             "ltv_ratio": state["ltv_ratio"],
             "dti_ratio": state["dti_ratio"],
             "foir_ratio": state["foir_ratio"],
+
+            # Assessment details
             "document_status": state["document_status"],
-            "missing_documents": ", ".join(state["missing_documents"]) if state["missing_documents"] else "None",
+            "missing_documents": ", ".join(state["missing_documents"])
+            if state["missing_documents"]
+            else "None",
+
             "decision": state["decision"],
             "risk_level": state["risk_level"],
-            "decision_reasons": ", ".join(state["decision_reasons"]),
+
+            "decision_reasons": "\n".join(
+                f"- {reason}" for reason in state["decision_reasons"]
+            )
+            if state["decision_reasons"]
+            else "- None",
+
+            "positive_factors": "\n".join(
+                f"- {factor}" for factor in state["positive_factors"]
+            )
+            if state["positive_factors"]
+            else "- None",
+
+            "risk_flags": "\n".join(
+                f"- {flag}" for flag in state["risk_flags"]
+            )
+            if state["risk_flags"]
+            else "- None",
+
+            "recommended_actions": "\n".join(
+                f"- {action}" for action in state["recommended_actions"]
+            )
+            if state["recommended_actions"]
+            else "- None",
         },
-        config={"callbacks":[opik_tracer]},
+        config={"callbacks": [opik_tracer]},
     )
 
-    state["officer_summary"]=response.content
+    state["officer_summary"] = response.content
 
     return state
+
+
