@@ -1,41 +1,54 @@
 # main.py
+
 import os
+
+# ---------------------------------------------------------
+# Opik local Docker configuration
+# IMPORTANT:
+# Set these BEFORE importing graph.py because graph.py imports
+# LLM nodes and creates Opik/LangChain tracers.
+# ---------------------------------------------------------
+
+PROJECT_NAME = "home-loan-langgraph"
+OPIK_LOCAL_URL = "http://localhost:5293/api"
+
+os.environ["OPIK_BASE_URL"] = OPIK_LOCAL_URL
+os.environ["OPIK_PROJECT_NAME"] = PROJECT_NAME
+
 import opik
 from opik.integrations.langchain import OpikTracer
-
-from graph import build_home_loan_graph
-
-
-os.environ.setdefault("OPIK_BASE_URL", "http://localhost:5293/api")
-os.environ.setdefault("OPIK_PROJECT_NAME", "home-loan-langgraph")
-
-opik_tracer = OpikTracer(project_name="home-loan-langgraph")
-
-@opik.track(name="home-loan-journey", project_name="home-loan-langgraph")
-def run_home_loan_application(app, application):
-    return app.invoke(
-        application,
-        config={"callbacks": [opik_tracer]},
-    )
 
 from graph import build_home_loan_graph
 from services.document_service import generate_required_documents
 
 
-#opik.configure(
-    #use_local=True,
-   # project_name="home-loan-langgraph",
-#)
+# ---------------------------------------------------------
+# Opik tracer
+# ---------------------------------------------------------
 
-#opik_tracer = OpikTracer(project_name="home-loan-langgraph")
+opik_tracer = OpikTracer(project_name=PROJECT_NAME)
 
+
+# ---------------------------------------------------------
+# Input helper functions
+# ---------------------------------------------------------
 
 def get_string_input(prompt: str, default: str = "") -> str:
+    """
+    Reads a text value from the user.
+    Uses the supplied default when the user submits an empty value.
+    """
+
     value = input(prompt).strip()
     return value if value else default
 
 
 def get_int_input(prompt: str, default: int = 0) -> int:
+    """
+    Reads a whole number safely.
+    Prevents the application from crashing on blank or invalid input.
+    """
+
     while True:
         value = input(prompt).strip()
 
@@ -49,6 +62,11 @@ def get_int_input(prompt: str, default: int = 0) -> int:
 
 
 def get_float_input(prompt: str, default: float = 0.0) -> float:
+    """
+    Reads a numeric value safely.
+    Prevents the application from crashing on blank or invalid input.
+    """
+
     while True:
         value = input(prompt).strip()
 
@@ -61,9 +79,40 @@ def get_float_input(prompt: str, default: float = 0.0) -> float:
             print("Please enter a valid number.")
 
 
-def ask_yes_no(prompt: str) -> bool:
+def get_choice_input(
+    prompt: str,
+    valid_choices: list[str],
+    default: str | None = None,
+) -> str:
+    """
+    Reads a fixed-choice value safely.
+
+    This prevents spelling mistakes such as 'alaried' being treated
+    as a self-employed applicant.
+    """
+
+    options = "/".join(valid_choices)
+
     while True:
-        value = input(prompt + " (yes/no): ").strip().lower()
+        default_text = f" [default: {default}]" if default else ""
+        value = input(f"{prompt} ({options}){default_text}: ").strip().lower()
+
+        if value == "" and default:
+            return default
+
+        if value in valid_choices:
+            return value
+
+        print(f"Please enter one of: {options}")
+
+
+def ask_yes_no(prompt: str) -> bool:
+    """
+    Accepts only yes/no answers.
+    """
+
+    while True:
+        value = input(f"{prompt} (yes/no): ").strip().lower()
 
         if value in ["yes", "y"]:
             return True
@@ -74,10 +123,17 @@ def ask_yes_no(prompt: str) -> bool:
         print("Please answer yes or no.")
 
 
-def collect_submitted_documents(employment_type: str, property_type: str) -> list[str]:
+# ---------------------------------------------------------
+# Document input
+# ---------------------------------------------------------
+
+def collect_submitted_documents(
+    employment_type: str,
+    property_type: str,
+) -> list[str]:
     """
-    Generates required documents based on applicant/property type,
-    then asks the user which documents are submitted.
+    Generates the required document checklist dynamically,
+    then asks the applicant which documents have been submitted.
     """
 
     required_documents = generate_required_documents(
@@ -85,56 +141,118 @@ def collect_submitted_documents(employment_type: str, property_type: str) -> lis
         property_type=property_type,
     )
 
-    submitted_documents = []
+    submitted_documents: list[str] = []
 
     print("\n--- DOCUMENT CHECKLIST ---")
     print("Please answer whether the applicant has submitted each document:")
 
     for document in required_documents:
-        has_document = ask_yes_no(f"Has the applicant submitted {document}?")
-        if has_document:
+        if ask_yes_no(f"Has the applicant submitted {document}?"):
             submitted_documents.append(document)
 
     return submitted_documents
 
 
+# ---------------------------------------------------------
+# Application input
+# ---------------------------------------------------------
+
 def get_user_application() -> dict:
     """
-    Collects a realistic home-loan application from terminal input.
+    Collects a complete home-loan application through terminal input.
     """
 
     print("\n==============================")
     print(" HOME LOAN APPLICATION JOURNEY")
     print("==============================")
 
+    # -----------------------------------------------------
+    # Customer profile
+    # -----------------------------------------------------
+
     print("\n--- CUSTOMER PROFILE ---")
+
     name = get_string_input("Applicant name: ", "Test User")
     age = get_int_input("Age: ")
-    employment_type = get_string_input("Employment type (salaried/self-employed): ", "salaried")
+
+    employment_type = get_choice_input(
+        "Employment type",
+        ["salaried", "self-employed"],
+        
+    )
+
     monthly_income = get_float_input("Monthly income: ")
     work_experience_years = get_float_input("Work experience in years: ")
     credit_score = get_int_input("Credit score: ")
     existing_emi = get_float_input("Existing EMI amount: ")
 
+    # -----------------------------------------------------
+    # Loan requirement
+    # -----------------------------------------------------
+
     print("\n--- LOAN REQUIREMENT ---")
+
     loan_amount = get_float_input("Requested loan amount: ")
     interest_rate = get_float_input("Interest rate, example 8.5: ", 8.5)
     tenure_years = get_int_input("Tenure in years: ", 20)
-    loan_purpose = get_string_input("Loan purpose (purchase/construction/refinance): ", "purchase")
+
+    loan_purpose = get_choice_input(
+        "Loan purpose",
+        ["purchase", "construction", "refinance"],
+        
+    )
+
+    # -----------------------------------------------------
+    # Property details
+    # -----------------------------------------------------
 
     print("\n--- PROPERTY DETAILS ---")
+
     property_value = get_float_input("Property value: ")
-    property_type = get_string_input("Property type (apartment/flat/house/plot): ", "apartment")
-    property_location = get_string_input("Property location: ", "Not provided")
+
+    property_type = get_choice_input(
+        "Property type",
+        ["apartment", "flat", "house", "plot"],
+       
+    )
+
+    property_location = get_string_input(
+        "Property location: ",
+        "Not provided",
+    )
+
     property_age = get_int_input("Property age in years: ", 0)
-    construction_status = get_string_input("Construction status (ready_to_move/under_construction): ", "ready_to_move")
-    legal_clearance_status = get_string_input("Legal clearance status (clear/pending/issue): ", "clear")
-    valuation_status = get_string_input("Valuation status (clear/pending/issue): ", "clear")
+
+    construction_status = get_choice_input(
+        "Construction status",
+        ["ready_to_move", "under_construction"],
+        
+    )
+
+    legal_clearance_status = get_choice_input(
+        "Legal clearance status",
+        ["clear", "pending", "issue"],
+        
+    )
+
+    valuation_status = get_choice_input(
+        "Valuation status",
+        ["clear", "pending", "issue"],
+        
+    )
+
+    # -----------------------------------------------------
+    # Documents
+    # -----------------------------------------------------
 
     submitted_documents = collect_submitted_documents(
         employment_type=employment_type,
         property_type=property_type,
     )
+
+    # -----------------------------------------------------
+    # Initial LangGraph state
+    # -----------------------------------------------------
 
     application = {
         # Customer profile
@@ -168,16 +286,21 @@ def get_user_application() -> dict:
         "document_status": "",
 
         # Calculated financial values
-        "proposed_emi": 0,
-        "ltv_ratio": 0,
-        "dti_ratio": 0,
-        "foir_ratio": 0,
+        "proposed_emi": 0.0,
+        "ltv_ratio": 0.0,
+        "dti_ratio": 0.0,
+        "foir_ratio": 0.0,
 
         # Decision fields
         "risk_level": "",
         "underwriting_status": "",
         "decision": "",
         "decision_reasons": [],
+
+        # Phase 3A deterministic analysis fields
+        "risk_flags": [],
+        "positive_factors": [],
+        "recommended_actions": [],
 
         # LLM-generated outputs
         "customer_explanation": "",
@@ -187,11 +310,20 @@ def get_user_application() -> dict:
     return application
 
 
-@opik.track(name="home_loan_journey")
-def run_home_loan_application(app, application):
+# ---------------------------------------------------------
+# Home-loan workflow execution
+# ---------------------------------------------------------
+
+@opik.track(
+    name="home_loan_journey",
+    project_name=PROJECT_NAME,
+)
+def run_home_loan_application(app, application: dict) -> dict:
     """
-    Parent trace for the full home-loan journey.
-    Uses OpikTracer for LangGraph/LangChain callback tracing.
+    Parent Opik trace for one complete home-loan application.
+
+    The compiled LangGraph workflow runs inside this parent trace.
+    OpikTracer captures LangGraph/LangChain execution details.
     """
 
     return app.invoke(
@@ -200,7 +332,15 @@ def run_home_loan_application(app, application):
     )
 
 
-def print_result(result: dict):
+# ---------------------------------------------------------
+# Result display
+# ---------------------------------------------------------
+
+def print_result(result: dict) -> None:
+    """
+    Prints the complete loan assessment result.
+    """
+
     print("\n==============================")
     print(" HOME LOAN RESULT")
     print("==============================")
@@ -212,39 +352,70 @@ def print_result(result: dict):
 
     print("\n--- FINANCIAL METRICS ---")
     print("Proposed EMI:", result["proposed_emi"])
-    print("LTV Ratio:", str(result["ltv_ratio"]) + "%")
-    print("DTI Ratio:", str(result["dti_ratio"]) + "%")
-    print("FOIR Ratio:", str(result["foir_ratio"]) + "%")
+    print("LTV Ratio:", f'{result["ltv_ratio"]}%')
+    print("DTI Ratio:", f'{result["dti_ratio"]}%')
+    print("FOIR Ratio:", f'{result["foir_ratio"]}%')
 
     print("\n--- DOCUMENT STATUS ---")
     print("Document Status:", result["document_status"])
     print("Missing Documents:", result["missing_documents"])
 
     print("\n--- DECISION REASONS ---")
-    for reason in result["decision_reasons"]:
-        print("-", reason)
+    if result["decision_reasons"]:
+        for reason in result["decision_reasons"]:
+            print("-", reason)
+    else:
+        print("- None")
+
+    print("\n--- POSITIVE FACTORS ---")
+    if result["positive_factors"]:
+        for factor in result["positive_factors"]:
+            print("-", factor)
+    else:
+        print("- None")
+
+    print("\n--- RISK FLAGS ---")
+    if result["risk_flags"]:
+        for flag in result["risk_flags"]:
+            print("-", flag)
+    else:
+        print("- None")
+
+    print("\n--- RECOMMENDED ACTIONS ---")
+    if result["recommended_actions"]:
+        for action in result["recommended_actions"]:
+            print("-", action)
+    else:
+        print("- None")
 
     print("\n--- AI CUSTOMER EXPLANATION ---")
     print(result["customer_explanation"])
-
 
     print("\n--- OFFICER SUMMARY (EXPERIMENTAL - UNDER REFINEMENT) ---")
     print(result["officer_summary"])
 
 
-def main():
+
+
+def main() -> None:
+    """
+    Starts the interactive home-loan journey application.
+    """
+
     app = build_home_loan_graph()
 
     while True:
         application = get_user_application()
         result = run_home_loan_application(app, application)
+
         print_result(result)
 
-        another = ask_yes_no("\nDo you want to check another application?")
-        if not another:
+        if not ask_yes_no("\nDo you want to check another application?"):
             break
 
+    
     opik_tracer.flush()
+
     print("\nFinished home-loan journey.")
 
 

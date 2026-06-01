@@ -49,3 +49,18 @@ class HomeLoanState(TypedDict):
     customer_explanation: str
     officer_summary: str
 
+        # Decision fields
+    risk_level: str
+    underwriting_status: str
+    decision: str
+    decision_reasons: List[str]
+
+    # Detailed decision analysis
+    risk_flags: List[str]
+    positive_factors: List[str]
+    recommended_actions: List[str]
+
+    # LLM-generated outputs
+    customer_explanation: str
+    officer_summary: str
+
