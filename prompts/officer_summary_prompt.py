@@ -33,6 +33,9 @@ Financial Metrics:
 - LTV Ratio: {ltv_ratio}%
 - DTI Ratio: {dti_ratio}%
 - FOIR Ratio: {foir_ratio}%
+- Maximum Affordable New EMI: {max_affordable_new_emi}
+- Estimated Maximum Eligible Loan: {max_eligible_loan}
+- Requested Amount Above Estimate: {loan_amount_gap}
 
 Assessment:
 - Decision: {decision}
@@ -62,6 +65,7 @@ Rules:
 - Pending valuation or legal clearance are review items.
 - Do not modify any numeric value.
 - Keep the summary concise and factual.
+- Treat the maximum eligible loan amount as a prototype estimate, not a final sanctioned amount.
 
 Return exactly this structure:
 

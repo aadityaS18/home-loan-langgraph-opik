@@ -241,9 +241,7 @@ def get_user_application() -> dict:
         
     )
 
-    # -----------------------------------------------------
-    # Documents
-    # -----------------------------------------------------
+   
 
     submitted_documents = collect_submitted_documents(
         employment_type=employment_type,
@@ -290,6 +288,10 @@ def get_user_application() -> dict:
         "ltv_ratio": 0.0,
         "dti_ratio": 0.0,
         "foir_ratio": 0.0,
+
+        "max_affordable_new_emi": 0.0,
+        "max_eligible_loan": 0.0,
+        "loan_amount_gap": 0.0,
 
         # Decision fields
         "risk_level": "",
@@ -351,10 +353,20 @@ def print_result(result: dict) -> None:
     print("Underwriting Status:", result["underwriting_status"])
 
     print("\n--- FINANCIAL METRICS ---")
+    print("Requested Loan Amount:", result["loan_amount"])
     print("Proposed EMI:", result["proposed_emi"])
     print("LTV Ratio:", f'{result["ltv_ratio"]}%')
     print("DTI Ratio:", f'{result["dti_ratio"]}%')
     print("FOIR Ratio:", f'{result["foir_ratio"]}%')
+
+    print("\n--- ESTIMATED LOAN ELIGIBILITY ---")
+    print("Maximum Affordable New EMI:", result["max_affordable_new_emi"])
+    print("Estimated Maximum Eligible Loan:", result["max_eligible_loan"])
+
+    if result["loan_amount_gap"] > 0:
+        print("Requested Amount Above Estimate:", result["loan_amount_gap"])
+    else:
+        print("Requested loan amount is within the estimated affordability limit.")
 
     print("\n--- DOCUMENT STATUS ---")
     print("Document Status:", result["document_status"])

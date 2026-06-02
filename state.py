@@ -64,3 +64,8 @@ class HomeLoanState(TypedDict):
     customer_explanation: str
     officer_summary: str
 
+    max_affordable_new_emi:float #Estimated EMI capacity remaining after existing EMI
+    max_eligible_loan:float #Maximum eligible loan amount based on financial metrics
+    loan_amount_gap:float
+
+    

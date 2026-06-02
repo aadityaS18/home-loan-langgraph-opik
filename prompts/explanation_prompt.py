@@ -27,10 +27,14 @@ Recommended Actions:
 {recommended_actions}
 
 Financial Metrics:
+- Requested Loan Amount: {loan_amount}
 - Proposed EMI: {proposed_emi}
 - LTV Ratio: {ltv_ratio}%
 - DTI Ratio: {dti_ratio}%
 - FOIR Ratio: {foir_ratio}%
+- Maximum Affordable New EMI: {max_affordable_new_emi}
+- Estimated Maximum Eligible Loan: {max_eligible_loan}
+- Requested Amount Above Estimate: {loan_amount_gap}
 
 Missing Documents:
 {missing_documents}
@@ -43,6 +47,7 @@ Rules:
 - If Missing Documents is "None", do not ask for documents.
 - Keep the explanation short and professional.
 - Do not use greetings or sign-offs.
+- If Requested Amount Above Estimate is greater than 0, clearly mention that reducing the requested loan amount may improve affordability.
 
 Return exactly this structure:
 

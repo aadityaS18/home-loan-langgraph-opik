@@ -1,4 +1,3 @@
-
 # nodes/llm_nodes.py
 
 import opik
@@ -13,13 +12,11 @@ from prompts.officer_summary_prompt import OFFICER_SUMMARY_PROMPT
 
 PROJECT_NAME = "home-loan-langgraph"
 
-
-# Opik tracer used for tracing LangChain + Ollama calls.
+# Traces the LangChain + Ollama calls in local Opik.
 opik_tracer = OpikTracer(project_name=PROJECT_NAME)
 
-
-# Local Ollama model.
-# The model explains results only; it does not make underwriting decisions.
+# Local free LLM running through Ollama.
+# It explains results only; it does not make loan decisions.
 llm = ChatOllama(
     model="llama3.2:3b",
     temperature=0,
@@ -33,11 +30,10 @@ llm = ChatOllama(
 )
 def generate_customer_explanation(state: HomeLoanState):
     """
-    Generates a customer-facing explanation using LangChain + Ollama.
+    Generates a customer-facing explanation.
 
-    Important:
-    - The rule engine already made the decision.
-    - The LLM only explains supplied facts and recommended actions.
+    The deterministic rule engine already made the decision.
+    Ollama only explains the supplied facts and recommendations.
     """
 
     prompt = ChatPromptTemplate.from_template(EXPLANATION_PROMPT)
@@ -45,6 +41,7 @@ def generate_customer_explanation(state: HomeLoanState):
 
     response = chain.invoke(
         {
+            # Decision details
             "name": state["name"],
             "decision": state["decision"],
             "risk_level": state["risk_level"],
@@ -73,11 +70,19 @@ def generate_customer_explanation(state: HomeLoanState):
             if state["recommended_actions"]
             else "- None",
 
+            # Existing financial metrics
+            "loan_amount": state["loan_amount"],
             "proposed_emi": state["proposed_emi"],
             "ltv_ratio": state["ltv_ratio"],
             "dti_ratio": state["dti_ratio"],
             "foir_ratio": state["foir_ratio"],
 
+            # Phase 4 affordability estimation
+            "max_affordable_new_emi": state["max_affordable_new_emi"],
+            "max_eligible_loan": state["max_eligible_loan"],
+            "loan_amount_gap": state["loan_amount_gap"],
+
+            # Documents
             "missing_documents": ", ".join(state["missing_documents"])
             if state["missing_documents"]
             else "None",
@@ -86,7 +91,6 @@ def generate_customer_explanation(state: HomeLoanState):
     )
 
     state["customer_explanation"] = response.content
-
     return state
 
 
@@ -96,11 +100,10 @@ def generate_customer_explanation(state: HomeLoanState):
 )
 def generate_officer_summary(state: HomeLoanState):
     """
-    Generates an internal summary for a loan officer using LangChain + Ollama.
+    Generates an internal summary for a loan officer.
 
-    Important:
-    - The LLM must only format supplied underwriting facts.
-    - It must not calculate or reinterpret risk levels independently.
+    The LLM must format supplied underwriting facts only.
+    It must not calculate or reinterpret the decision independently.
     """
 
     prompt = ChatPromptTemplate.from_template(OFFICER_SUMMARY_PROMPT)
@@ -138,12 +141,18 @@ def generate_officer_summary(state: HomeLoanState):
             "dti_ratio": state["dti_ratio"],
             "foir_ratio": state["foir_ratio"],
 
-            # Assessment details
+            # Phase 4 affordability estimation
+            "max_affordable_new_emi": state["max_affordable_new_emi"],
+            "max_eligible_loan": state["max_eligible_loan"],
+            "loan_amount_gap": state["loan_amount_gap"],
+
+            # Document status
             "document_status": state["document_status"],
             "missing_documents": ", ".join(state["missing_documents"])
             if state["missing_documents"]
             else "None",
 
+            # Underwriting assessment
             "decision": state["decision"],
             "risk_level": state["risk_level"],
 
@@ -175,7 +184,6 @@ def generate_officer_summary(state: HomeLoanState):
     )
 
     state["officer_summary"] = response.content
-
     return state
 
 

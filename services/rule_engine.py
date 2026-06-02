@@ -107,6 +107,37 @@ def run_underwriting_rules(
             f"DTI ratio of {state['dti_ratio']}% is within the prototype acceptable range."
         )
 
+
+ 
+
+    max_eligible_loan = state["max_eligible_loan"]
+    loan_amount_gap = state["loan_amount_gap"]
+
+    if max_eligible_loan <= 0:
+        risk_flags.append(
+            "No additional loan EMI capacity is available under the prototype affordability assumption."
+        )
+        recommended_actions.append(
+            "Reduce existing EMI obligations or increase stable monthly income before applying."
+        )
+
+    elif state["loan_amount"] > max_eligible_loan:
+        risk_flags.append(
+            "Requested loan amount is above the estimated eligible loan amount "
+            f"of {max_eligible_loan}."
+        )
+        recommended_actions.append(
+            "Consider reducing the requested loan amount by approximately "
+            f"{loan_amount_gap}."
+        )
+
+    else:
+        positive_factors.append(
+            "Requested loan amount is within the estimated affordability limit."
+        )  
+
+
+
     # ---------------------------------------------------------
     # Property financing assessment
     # ---------------------------------------------------------
