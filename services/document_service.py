@@ -1,8 +1,12 @@
 # services/document_service.py
 
 import opik
+"""
+Document Checklist Service
 
-
+This service creates and checks the document list required for the initial
+home-loan journey.
+"""
 @opik.track(name="generate_required_documents")
 def generate_required_documents(employment_type: str, property_type: str) -> list[str]:
     """

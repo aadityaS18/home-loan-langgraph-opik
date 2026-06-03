@@ -1,5 +1,42 @@
 # nodes/financial_nodes.py
 
+"""
+Financial Metrics Node
+
+This LangGraph node is responsible for calculating the main financial values
+required during the initial home-loan assessment.
+
+It uses service functions to calculate:
+- Proposed EMI for the requested loan.
+- Loan-to-Value ratio (LTV).
+- Debt-to-Income ratio (DTI).
+- FOIR, currently represented using the same EMI burden calculation as DTI.
+- Maximum affordable EMI available for a new loan.
+- Estimated maximum eligible loan amount.
+- Gap between requested loan amount and estimated eligible amount.
+
+This node does not make the final loan decision.
+It only prepares calculated values that are later used by the underwriting
+rule engine.
+
+Inputs read from state:
+- loan_amount
+- interest_rate
+- tenure_years
+- property_value
+- monthly_income
+- existing_emi
+
+Outputs added to state:
+- proposed_emi
+- ltv_ratio
+- dti_ratio
+- foir_ratio
+- max_affordable_new_emi
+- max_eligible_loan
+- loan_amount_gap
+"""
+
 import opik
 
 from state import HomeLoanState
@@ -52,7 +89,7 @@ def calculate_financial_metrics(state: HomeLoanState):
         0.0,
     )
 
-    # Return new state values to LangGraph.
+
     return {
         "proposed_emi": proposed_emi,
         "ltv_ratio": ltv_ratio,

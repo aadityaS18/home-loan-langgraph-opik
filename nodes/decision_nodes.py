@@ -1,5 +1,38 @@
 # nodes/decision_nodes.py
 
+"""
+Underwriting Decision and Routing Nodes
+
+This file contains the decision-making stage of the LangGraph workflow.
+
+The underwriting decision is deterministic and rule-based.
+The LLM does not approve or reject the applicant.
+
+The underwriting node calls the Python rule engine, which evaluates:
+- Age and income eligibility.
+- Credit score.
+- DTI and affordability risk.
+- LTV and property-financing risk.
+- Missing documents.
+- Legal clearance and valuation status.
+- Requested loan amount compared with estimated eligibility.
+
+The node stores:
+- Final initial decision.
+- Overall risk level.
+- Detailed decision reasons.
+- Risk flags.
+- Positive factors.
+- Recommended actions.
+
+The routing function then sends the application through the correct workflow
+path:
+- pre_approved
+- needs_documents
+- manual_review
+- rejected
+"""
+
 import opik
 
 from state import HomeLoanState
