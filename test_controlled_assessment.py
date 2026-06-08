@@ -10,7 +10,22 @@ from pprint import pprint
 from agent.controlled_assessment import run_controlled_home_loan_assessment
 
 
-application = {
+BASE_DOCUMENTS = [
+    "id_proof",
+    "address_proof",
+    "pan_card",
+    "bank_statement",
+    "property_title_deed",
+    "sale_agreement",
+    "salary_slips",
+    "form_16",
+    "employment_proof",
+    "builder_noc",
+    "approved_building_plan",
+]
+
+
+APPROVED_CASE = {
     "name": "Aryan",
     "age": 35,
     "employment_type": "salaried",
@@ -32,22 +47,59 @@ application = {
     "pan_available": True,
     "id_proof_available": True,
     "address_proof_available": True,
-    "submitted_documents": [
-        "id_proof",
-        "address_proof",
-        "pan_card",
-        "bank_statement",
-        "property_title_deed",
-        "sale_agreement",
-        "salary_slips",
-        "form_16",
-        "employment_proof",
-        "builder_noc",
-        "approved_building_plan",
-    ],
+    "submitted_documents": BASE_DOCUMENTS,
 }
 
 
-if __name__ == "__main__":
+REJECTED_CASE = {
+    "name": "Rahul",
+    "age": 32,
+    "employment_type": "salaried",
+    "monthly_income": 70000,
+    "work_experience_years": 5,
+    "credit_score": 730,
+    "existing_emi": 10000,
+    "loan_amount": 6000000,
+    "interest_rate": 8.5,
+    "tenure_years": 20,
+    "loan_purpose": "purchase",
+    "property_value": 7500000,
+    "property_type": "apartment",
+    "property_location": "Noida",
+    "property_age": 3,
+    "construction_status": "ready_to_move",
+    "legal_clearance_status": "clear",
+    "valuation_status": "clear",
+    "pan_available": True,
+    "id_proof_available": True,
+    "address_proof_available": True,
+    "submitted_documents": BASE_DOCUMENTS,
+}
+
+
+def run_case(case_name: str, application: dict):
+    print(f"\n================ {case_name} ================")
     result = run_controlled_home_loan_assessment(application)
-    pprint(result)
+
+    print("\nDecision:", result["assessment"]["decision"])
+    print("Risk Level:", result["assessment"]["risk_level"])
+    print("KYC:", result["kyc"]["kyc_status"])
+    print("CIBIL:", result["cibil"]["cibil_status"])
+    print("Document Status:", result["documents"]["document_status"])
+
+    print("\nFinancial Metrics:")
+    pprint(result["financial_metrics"])
+
+    print("\nDecision Reasons:")
+    pprint(result["assessment"]["decision_reasons"])
+
+    print("\nRisk Flags:")
+    pprint(result["assessment"]["risk_flags"])
+
+    print("\nRecommended Actions:")
+    pprint(result["assessment"]["recommended_actions"])
+
+
+if __name__ == "__main__":
+    run_case("APPROVED CASE", APPROVED_CASE)
+    run_case("REJECTED CASE", REJECTED_CASE)
