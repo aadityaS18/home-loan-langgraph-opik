@@ -1,0 +1,18 @@
+services:
+
+  postgres:
+    image: postgres:16
+    container_name: home-loan-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: home_loan
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - home_loan_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  home_loan_postgres_data:

@@ -13,9 +13,9 @@ from tools.financial_tools import (
     calculate_emi_tool,
     calculate_ltv_tool,
     calculate_dti_tool,
-    calculate_foir_tool,
-    calculate_eligible_loan_tool,
-    estimate_max_eligible_loan_tool
+    
+   
+    estimate_max_eligible_loan_tool,
 )
 
 from tools.verification_tools import(
@@ -37,11 +37,11 @@ def build_home_loan_agent():
 
     model=ChatOllama(model="llama3.2:3b",
                      temperature=0,
-                     num_predict=500,)
+                     num_predict=250,)
     
     tools=[
 
-         calculate_emi_tool,
+        calculate_emi_tool,
         calculate_ltv_tool,
         calculate_dti_tool,
         estimate_max_eligible_loan_tool,
