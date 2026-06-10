@@ -271,4 +271,37 @@ def update_application_status(
 
         conn.commit()
 
+    
+
     return True
+
+
+def get_status_history(application_id:str)->list[dict[str,Any]]:
+    """Will return the history for saved application"""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+SELECT
+old_status,
+new_status,
+note,
+created_at
+FROM status_history
+WHERE application_id=%s
+ORDER BY created_at ASC
+""",
+(application_id,),
+            )
+
+            rows = cur.fetchall()
+
+    return [
+        {
+            "old_status": row[0],
+            "new_status": row[1],
+            "note": row[2],
+            "created_at": row[3],
+        }
+        for row in rows
+    ]

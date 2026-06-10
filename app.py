@@ -22,6 +22,7 @@ from database.repository import (
     get_application_record,
     list_applications,
     update_application_status,
+    get_status_history
 )
 
 
@@ -650,6 +651,20 @@ def admin_ui():
     }
 
     display_result(reconstructed_result)
+
+    st.divider()
+    st.subheader("Status History")
+
+    history=get_status_history(selected_application_id)
+    if history:
+        st.dataframe(
+            history,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    else:
+        st.info("No status history found for this application")    
 
     st.divider()
     st.subheader("Update Application Status")
