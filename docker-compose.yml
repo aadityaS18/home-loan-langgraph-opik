@@ -1,5 +1,4 @@
 services:
-
   postgres:
     image: postgres:16
     container_name: home-loan-postgres
@@ -7,12 +6,29 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: home_loan
-
     ports:
       - "5432:5432"
-
     volumes:
       - home_loan_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d home_loan"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    container_name: home-loan-streamlit
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/home_loan
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+    command: streamlit run app.py --server.address=0.0.0.0 --server.port=8501
 
 volumes:
   home_loan_postgres_data:
