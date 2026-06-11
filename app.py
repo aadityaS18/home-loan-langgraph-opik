@@ -27,7 +27,7 @@ from database.repository import (
 
 
 st.set_page_config(
-    page_title="Home Loan AI Origination",
+    page_title="Home Loan AI ",
     page_icon="🏠",
     layout="wide",
 )
@@ -315,6 +315,120 @@ def display_result(result: dict, application_id: str | None = None):
         for action in assessment["recommended_actions"]:
             st.write(f"- {action}")
 
+def applicant_status_check_ui():
+
+    st.subheader("Check Existing Application Status")
+    st.caption("Enter your application ID to view the latest application status and next steps.")
+    
+    application_id=st.text_input(
+
+        "Application ID",
+        placeholder="Example: app-48371fbce6",
+
+        key="applicant_status_application_id",
+        value="app-48371fbce6"
+    )
+
+
+
+    def applicant_status_check_ui():
+        """To check existing application status by application Id"""
+
+        st.subheader("Check Exisitng Application Status")
+        st.caption("Enter the application id RECIEVED AFTER SUBMISSION TO VIEW THE LATEST STATUS")
+        
+        application_id=st.text_input(
+            "Application ID",
+            placeholder="Example: app-48371fbce6",
+            key="applicant_status_application_id",
+        )
+
+        if st.button("Check Status"):
+            if not  application_id.strip():
+                st.error("Please enter an application id.")
+                return 
+            
+            record =get_application_record(application_id.strip())
+
+            if record is None:
+                st.error("No application found for this ID.")
+                return 
+            
+
+            app_data=record["application"]
+            assessment=record["assessment"]
+
+            assessment_result=assessment["assessment_result"]
+            document_result=assessment["document_result"]
+            financial_metrics=assessment["financial_metrics"]
+
+            st.success("Application found")
+
+            c1,c2,c3,c4=st.columns(4)
+
+            with c1:
+                st.metric("Application ID",app_data["id"])
+
+
+            with c2:
+                st.metric("Current Status",app_data["status"])
+
+
+            with c3:
+                st.metric("Decision",app_data["decision"])
+
+
+            with c4:
+                st.metric("Risk Level",app_data["risk_level"])
+
+            st.divider()
+
+            st.write("**Applicant Name:**",app_data["applicant_name"])
+
+            st.subheader("Key Finanacial Summary ")
+
+            f1,f2,f3=st.columns(3)
+
+            with f1:
+                st.metric("Proposed EMI",format_currency(financial_metrics["proposed_emi"]))
+
+            with f2:
+                st.metric("LTV Ratio",f'{financial_metrics["ltv_ratio"]}%')
+
+            with f3:
+                st.metric("FOIR ratio",f'{financial_metrics["foir_ratio"]}%')
+
+            st.subheader("Document Status")
+
+            st.write("**Status**",document_result["document_status"])
+
+            if document_result["missing_documents"]:
+                st.warning("Missing Documents: " + ", ".join(document_result["missing_documents"]))
+
+            else:
+                st.success("No missing documents.")
+
+            st.subheader("Recommended Actions")
+
+            recommended_actions=assessment_result.get("recommended_actions",[])
+
+            if recommended_actions:
+                for action in recommended_actions:
+                    st.write(f"- {action}")
+
+                else:
+                    st.info("No recommended actions available.")    
+
+                st.subheader("Decision Reasons")
+
+                decision_reasons=assessment_result.get(decision_reasons,[])
+
+                if decision_reasons:
+                    for reason in decision_reasons:
+                        st.write(f"- {reason}")
+
+                else:
+                    st.info("No decision reasons available.")        
 
 def applicant_ui():
     """Applicant-side application form."""
@@ -323,6 +437,11 @@ def applicant_ui():
     st.caption(
         "Prototype initial assessment. This is not a final bank sanction or approval."
     )
+
+    with st.expander("Already applied? Check your application status"):
+        applicant_status_check_ui()
+
+    st.divider()
 
     application_mode = st.selectbox(
         "Application Mode",
