@@ -250,7 +250,7 @@ def main():
 
         state_1 = graph.invoke(
             {
-                "applicant_name": "Aaditya",
+                "applicant_name": "Sample Applicant",
                 "messages": [],
             },
             config=config,
