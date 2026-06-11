@@ -1,13 +1,13 @@
 """
-Streamlit UI for the Home Loan AI Origination Prototype.
+Streamlit UI for the Home Loan Origination Portal.
 
 Run:
     streamlit run app.py
 
 This UI has:
-1. Applicant-side application form
-2. Optional demo presets
-3. Admin/Ops dashboard
+1. New Application
+2. Track Application
+3. Operations Dashboard
 4. PostgreSQL save/retrieve/update support
 """
 
@@ -20,20 +20,18 @@ from database.db import initialize_database
 from database.repository import (
     create_application_record,
     get_application_record,
+    get_status_history,
     list_applications,
     update_application_status,
-    get_status_history
 )
 
 
 st.set_page_config(
-    page_title="Home Loan AI ",
-    page_icon="🏠",
+    page_title="Home Loan Origination Portal",
     layout="wide",
 )
 
 
-# Create DB tables if they do not already exist.
 initialize_database()
 
 
@@ -72,7 +70,7 @@ PLOT_HOUSE_DOCUMENTS = [
 def get_defaults(application_mode: str) -> dict:
     """Return default field values based on selected application mode."""
 
-    if application_mode == "Demo: Pre-approved applicant":
+    if application_mode == "Sample Application 1":
         return {
             "name": "Aryan",
             "age": 35,
@@ -97,7 +95,7 @@ def get_defaults(application_mode: str) -> dict:
             "address_proof_available": True,
         }
 
-    if application_mode == "Demo: Rejected affordability case":
+    if application_mode == "Sample Application 2":
         return {
             "name": "Rahul",
             "age": 32,
@@ -122,7 +120,6 @@ def get_defaults(application_mode: str) -> dict:
             "address_proof_available": True,
         }
 
-    # Custom application starts blank/default.
     return {
         "name": "",
         "age": 30,
@@ -183,7 +180,7 @@ def validate_application(application: dict) -> list[str]:
     if application["property_value"] < application["loan_amount"]:
         errors.append(
             "Property value is lower than requested loan amount. "
-            "This may create very high LTV risk. Please confirm the values."
+            "This may create high loan-to-value risk. Please confirm the values."
         )
 
     if not application["property_location"].strip():
@@ -198,8 +195,12 @@ def validate_application(application: dict) -> list[str]:
     return errors
 
 
-def display_result(result: dict, application_id: str | None = None):
-    """Display assessment result in a clean UI format."""
+def display_application_result(
+    result: dict,
+    application_id: str | None = None,
+    show_document_expander: bool = True,
+):
+    """Display application assessment result."""
 
     assessment = result["assessment"]
     financial = result["financial_metrics"]
@@ -208,7 +209,7 @@ def display_result(result: dict, application_id: str | None = None):
     cibil = result["cibil"]
 
     if application_id:
-        st.success(f"Application saved successfully. Application ID: `{application_id}`")
+        st.success(f"Application submitted successfully. Application ID: `{application_id}`")
 
     decision = assessment["decision"]
     risk_level = assessment["risk_level"]
@@ -216,63 +217,63 @@ def display_result(result: dict, application_id: str | None = None):
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        st.metric("Decision", decision)
+        st.metric("Application Outcome", decision)
 
     with col2:
         st.metric("Risk Level", risk_level)
 
     with col3:
-        st.metric("KYC Status", kyc["kyc_status"])
+        st.metric("Identity Status", kyc["kyc_status"])
 
     with col4:
-        st.metric("CIBIL Status", cibil["cibil_status"])
+        st.metric("Credit Status", cibil["cibil_status"])
 
     st.divider()
 
-    st.subheader("Financial Metrics")
+    st.subheader("Loan Assessment Summary")
 
     f1, f2, f3, f4 = st.columns(4)
 
     with f1:
-        st.metric("Proposed EMI", format_currency(financial["proposed_emi"]))
+        st.metric("Monthly Repayment", format_currency(financial["proposed_emi"]))
 
     with f2:
-        st.metric("LTV Ratio", f'{financial["ltv_ratio"]}%')
+        st.metric("Loan-to-Value", f'{financial["ltv_ratio"]}%')
 
     with f3:
-        st.metric("DTI Ratio", f'{financial["dti_ratio"]}%')
+        st.metric("Debt-to-Income", f'{financial["dti_ratio"]}%')
 
     with f4:
-        st.metric("FOIR Ratio", f'{financial["foir_ratio"]}%')
+        st.metric("Obligation Ratio", f'{financial["foir_ratio"]}%')
 
     f5, f6, f7 = st.columns(3)
 
     with f5:
         st.metric(
-            "Max Affordable New EMI",
+            "Repayment Capacity",
             format_currency(financial["max_affordable_new_emi"]),
         )
 
     with f6:
         st.metric(
-            "Estimated Max Eligible Loan",
+            "Estimated Eligible Amount",
             format_currency(financial["max_eligible_loan"]),
         )
 
     with f7:
         st.metric(
-            "Requested Amount Above Estimate",
+            "Amount Above Estimate",
             format_currency(financial["loan_amount_gap"]),
         )
 
     st.divider()
 
-    st.subheader("Document Status")
+    st.subheader("Document Review")
 
     d1, d2 = st.columns(2)
 
     with d1:
-        st.write("**Status:**", documents["document_status"])
+        st.write("**Document Status:**", documents["document_status"])
 
     with d2:
         st.write("**Missing Documents:**")
@@ -281,7 +282,14 @@ def display_result(result: dict, application_id: str | None = None):
         else:
             st.success("None")
 
-    with st.expander("View required and submitted documents"):
+    if show_document_expander:
+        with st.expander("View document checklist"):
+            st.write("**Required Documents**")
+            st.write(documents["required_documents"])
+
+            st.write("**Submitted Documents**")
+            st.write(documents["submitted_documents"])
+    else:
         st.write("**Required Documents**")
         st.write(documents["required_documents"])
 
@@ -290,7 +298,7 @@ def display_result(result: dict, application_id: str | None = None):
 
     st.divider()
 
-    st.subheader("Assessment Details")
+    st.subheader("Review Notes")
 
     c1, c2 = st.columns(2)
 
@@ -299,163 +307,45 @@ def display_result(result: dict, application_id: str | None = None):
         for reason in assessment["decision_reasons"]:
             st.write(f"- {reason}")
 
-        st.write("**Risk Flags**")
+        st.write("**Risk Indicators**")
         if assessment["risk_flags"]:
             for flag in assessment["risk_flags"]:
                 st.write(f"- {flag}")
         else:
-            st.success("No major risk flags.")
+            st.success("No major risk indicators.")
 
     with c2:
-        st.write("**Positive Factors**")
+        st.write("**Strengths**")
         for factor in assessment["positive_factors"]:
             st.write(f"- {factor}")
 
-        st.write("**Recommended Actions**")
+        st.write("**Next Steps**")
         for action in assessment["recommended_actions"]:
             st.write(f"- {action}")
 
-def applicant_status_check_ui():
 
-    st.subheader("Check Existing Application Status")
-    st.caption("Enter your application ID to view the latest application status and next steps.")
-    
-    application_id=st.text_input(
+def new_application_ui():
+    """Applicant-side new application form."""
 
-        "Application ID",
-        placeholder="Example: app-48371fbce6",
-
-        key="applicant_status_application_id",
-        value="app-48371fbce6"
-    )
-
-
-
-    def applicant_status_check_ui():
-        """To check existing application status by application Id"""
-
-        st.subheader("Check Exisitng Application Status")
-        st.caption("Enter the application id RECIEVED AFTER SUBMISSION TO VIEW THE LATEST STATUS")
-        
-        application_id=st.text_input(
-            "Application ID",
-            placeholder="Example: app-48371fbce6",
-            key="applicant_status_application_id",
-        )
-
-        if st.button("Check Status"):
-            if not  application_id.strip():
-                st.error("Please enter an application id.")
-                return 
-            
-            record =get_application_record(application_id.strip())
-
-            if record is None:
-                st.error("No application found for this ID.")
-                return 
-            
-
-            app_data=record["application"]
-            assessment=record["assessment"]
-
-            assessment_result=assessment["assessment_result"]
-            document_result=assessment["document_result"]
-            financial_metrics=assessment["financial_metrics"]
-
-            st.success("Application found")
-
-            c1,c2,c3,c4=st.columns(4)
-
-            with c1:
-                st.metric("Application ID",app_data["id"])
-
-
-            with c2:
-                st.metric("Current Status",app_data["status"])
-
-
-            with c3:
-                st.metric("Decision",app_data["decision"])
-
-
-            with c4:
-                st.metric("Risk Level",app_data["risk_level"])
-
-            st.divider()
-
-            st.write("**Applicant Name:**",app_data["applicant_name"])
-
-            st.subheader("Key Finanacial Summary ")
-
-            f1,f2,f3=st.columns(3)
-
-            with f1:
-                st.metric("Proposed EMI",format_currency(financial_metrics["proposed_emi"]))
-
-            with f2:
-                st.metric("LTV Ratio",f'{financial_metrics["ltv_ratio"]}%')
-
-            with f3:
-                st.metric("FOIR ratio",f'{financial_metrics["foir_ratio"]}%')
-
-            st.subheader("Document Status")
-
-            st.write("**Status**",document_result["document_status"])
-
-            if document_result["missing_documents"]:
-                st.warning("Missing Documents: " + ", ".join(document_result["missing_documents"]))
-
-            else:
-                st.success("No missing documents.")
-
-            st.subheader("Recommended Actions")
-
-            recommended_actions=assessment_result.get("recommended_actions",[])
-
-            if recommended_actions:
-                for action in recommended_actions:
-                    st.write(f"- {action}")
-
-                else:
-                    st.info("No recommended actions available.")    
-
-                st.subheader("Decision Reasons")
-
-                decision_reasons=assessment_result.get(decision_reasons,[])
-
-                if decision_reasons:
-                    for reason in decision_reasons:
-                        st.write(f"- {reason}")
-
-                else:
-                    st.info("No decision reasons available.")        
-
-def applicant_ui():
-    """Applicant-side application form."""
-
-    st.header("Applicant Home Loan Application")
+    st.header("New Home Loan Application")
     st.caption(
-        "Prototype initial assessment. This is not a final bank sanction or approval."
+        "Enter applicant, loan and property details to submit an initial home loan application."
     )
-
-    with st.expander("Already applied? Check your application status"):
-        applicant_status_check_ui()
-
-    st.divider()
 
     application_mode = st.selectbox(
-        "Application Mode",
+        "Application Type",
         [
             "Custom Application",
-            "Demo: Pre-approved applicant",
-            "Demo: Rejected affordability case",
+            "Sample Application 1",
+            "Sample Application 2",
         ],
+        help="Use custom mode for a new application, or sample applications for demonstration.",
     )
 
     defaults = get_defaults(application_mode)
 
     with st.form("home_loan_application_form"):
-        st.subheader("1. Customer Profile")
+        st.subheader("1. Applicant Details")
 
         c1, c2, c3 = st.columns(3)
 
@@ -497,13 +387,13 @@ def applicant_ui():
                 value=defaults["credit_score"],
             )
             existing_emi = st.number_input(
-                "Existing EMI",
+                "Existing Monthly Repayment",
                 min_value=0.0,
                 value=defaults["existing_emi"],
                 step=1000.0,
             )
 
-        st.subheader("2. Loan Requirement")
+        st.subheader("2. Loan Requirements")
 
         l1, l2, l3, l4 = st.columns(4)
 
@@ -596,7 +486,7 @@ def applicant_ui():
                 index=get_select_index(clearance_options, defaults["valuation_status"]),
             )
 
-        st.subheader("4. Mock KYC Details")
+        st.subheader("4. Identity & Document Availability")
 
         k1, k2, k3 = st.columns(3)
 
@@ -632,7 +522,6 @@ def applicant_ui():
         else:
             available_document_options += PLOT_HOUSE_DOCUMENTS
 
-        # For custom applications, default to only KYC docs selected.
         if application_mode == "Custom Application":
             default_documents = [
                 doc
@@ -648,7 +537,7 @@ def applicant_ui():
             default=default_documents,
         )
 
-        submitted = st.form_submit_button("Run Initial Assessment")
+        submitted = st.form_submit_button("Submit Application")
 
     if submitted:
         application = {
@@ -678,7 +567,6 @@ def applicant_ui():
 
         errors = validate_application(application)
 
-        # Warning only: property value lower than loan amount is risky but still useful to assess.
         blocking_errors = [
             error
             for error in errors
@@ -694,20 +582,118 @@ def applicant_ui():
         if blocking_errors:
             st.stop()
 
-        with st.spinner("Running controlled tool-based assessment..."):
+        with st.spinner("Processing application..."):
             result = run_controlled_home_loan_assessment(application)
             application_id = create_application_record(result)
 
         st.divider()
-        st.header("Assessment Result")
-        display_result(result, application_id=application_id)
+        st.header("Application Result")
+        display_application_result(result, application_id=application_id)
 
 
-def admin_ui():
-    """Admin/Ops dashboard."""
+def track_application_ui():
+    """Allow applicant to check existing application status by application ID."""
 
-    st.header("Admin / Operations Dashboard")
-    st.caption("Review saved loan applications and update processing status.")
+    st.header("Track Application")
+    st.caption("Enter your application ID to view the latest application status.")
+
+    application_id = st.text_input(
+        "Application ID",
+        placeholder="Example: app-48371fbce6",
+        key="track_application_id",
+    )
+
+    if st.button("Check Application Status"):
+        if not application_id.strip():
+            st.error("Please enter an application ID.")
+            return
+
+        record = get_application_record(application_id.strip())
+
+        if record is None:
+            st.error("No application found for this ID.")
+            return
+
+        app_data = record["application"]
+        assessment = record["assessment"]
+
+        assessment_result = assessment["assessment_result"]
+        document_result = assessment["document_result"]
+        financial_metrics = assessment["financial_metrics"]
+
+        st.success("Application found.")
+
+        c1, c2, c3, c4 = st.columns(4)
+
+        with c1:
+            st.metric("Application ID", app_data["id"])
+
+        with c2:
+            st.metric("Current Status", app_data["status"])
+
+        with c3:
+            st.metric("Application Outcome", app_data["decision"])
+
+        with c4:
+            st.metric("Risk Level", app_data["risk_level"])
+
+        st.divider()
+
+        st.write("**Applicant Name:**", app_data["applicant_name"])
+
+        st.subheader("Loan Summary")
+
+        f1, f2, f3 = st.columns(3)
+
+        with f1:
+            st.metric(
+                "Monthly Repayment",
+                format_currency(financial_metrics["proposed_emi"]),
+            )
+
+        with f2:
+            st.metric("Loan-to-Value", f'{financial_metrics["ltv_ratio"]}%')
+
+        with f3:
+            st.metric("Obligation Ratio", f'{financial_metrics["foir_ratio"]}%')
+
+        st.subheader("Document Status")
+
+        st.write("**Status:**", document_result["document_status"])
+
+        if document_result["missing_documents"]:
+            st.warning(
+                "Missing documents: "
+                + ", ".join(document_result["missing_documents"])
+            )
+        else:
+            st.success("No missing documents.")
+
+        st.subheader("Next Steps")
+
+        recommended_actions = assessment_result.get("recommended_actions", [])
+
+        if recommended_actions:
+            for action in recommended_actions:
+                st.write(f"- {action}")
+        else:
+            st.info("No next steps available.")
+
+        with st.expander("View review notes"):
+            decision_reasons = assessment_result.get("decision_reasons", [])
+
+            if decision_reasons:
+                for reason in decision_reasons:
+                    st.write(f"- {reason}")
+            else:
+                st.info("No review notes available.")
+
+
+def operations_dashboard_ui():
+    """Internal operations dashboard."""
+
+    st.header("Operations Dashboard")
+    st.caption("Review applications, track status and update processing decisions.")
 
     applications = list_applications()
 
@@ -715,20 +701,55 @@ def admin_ui():
         st.info("No applications found yet.")
         return
 
-    st.subheader("Saved Applications")
+    st.subheader("Application Queue")
+
+    status_filter_options = ["All"] + sorted(
+        list({app["status"] for app in applications if app.get("status")})
+    )
+
+    f1, f2 = st.columns(2)
+
+    with f1:
+        selected_status_filter = st.selectbox(
+            "Filter by Status",
+            status_filter_options,
+        )
+
+    with f2:
+        name_search = st.text_input("Search Applicant Name")
+
+    filtered_applications = applications
+
+    if selected_status_filter != "All":
+        filtered_applications = [
+            app
+            for app in filtered_applications
+            if app["status"] == selected_status_filter
+        ]
+
+    if name_search.strip():
+        filtered_applications = [
+            app
+            for app in filtered_applications
+            if name_search.lower().strip() in app["applicant_name"].lower()
+        ]
+
+    if not filtered_applications:
+        st.warning("No applications match the selected filters.")
+        return
 
     st.dataframe(
-        applications,
+        filtered_applications,
         use_container_width=True,
         hide_index=True,
     )
 
     application_options = [
         f'{app["id"]} | {app["applicant_name"]} | {app["status"]}'
-        for app in applications
+        for app in filtered_applications
     ]
 
-    selected = st.selectbox("Select Application", application_options)
+    selected = st.selectbox("Select Application for Review", application_options)
 
     selected_application_id = selected.split(" | ")[0]
 
@@ -739,7 +760,7 @@ def admin_ui():
         return
 
     st.divider()
-    st.subheader("Application Summary")
+    st.subheader("Applicant Summary")
 
     app_data = record["application"]
     assessment = record["assessment"]
@@ -756,9 +777,7 @@ def admin_ui():
         st.metric("Current Status", app_data["status"])
 
     with s4:
-        st.metric("Decision", app_data["decision"])
-
-    st.subheader("Assessment Record")
+        st.metric("Application Outcome", app_data["decision"])
 
     reconstructed_result = {
         "application": app_data["application_data"],
@@ -769,24 +788,28 @@ def admin_ui():
         "assessment": assessment["assessment_result"],
     }
 
-    display_result(reconstructed_result)
+    with st.expander("View full application assessment", expanded=True):
+        display_application_result(
+            reconstructed_result,
+            show_document_expander=False,
+        )
 
     st.divider()
     st.subheader("Status History")
 
-    history=get_status_history(selected_application_id)
+    history = get_status_history(selected_application_id)
+
     if history:
         st.dataframe(
             history,
             use_container_width=True,
             hide_index=True,
         )
-
     else:
-        st.info("No status history found for this application")    
+        st.info("No status history found for this application.")
 
     st.divider()
-    st.subheader("Update Application Status")
+    st.subheader("Update Processing Status")
 
     status_options = [
         "submitted",
@@ -810,7 +833,7 @@ def admin_ui():
         index=status_index,
     )
 
-    note = st.text_area("Admin/Ops Note")
+    note = st.text_area("Review Note")
 
     if st.button("Update Status"):
         updated = update_application_status(
@@ -825,28 +848,36 @@ def admin_ui():
         else:
             st.error("Failed to update application status.")
 
-    with st.expander("Raw saved database record"):
+    with st.expander("Raw database record"):
         st.code(pformat(record), language="python")
 
 
 def main():
-    st.title("🏠 Home Loan AI Origination Prototype")
+    st.title("Home Loan Origination Portal")
 
     st.write(
-        "This prototype uses mock KYC, mock CIBIL, deterministic financial metrics, and document verification to assess home loan applications."
+        "Submit, track and review home loan applications through a structured "
+        "loan origination workflow."
     )
 
-    st.info("This is a prototype initial assessment system. It is not a final bank approval, sanction, or disbursement system.")
+    st.info(
+        "This is a prototype for initial application assessment. It is not a final "
+        "loan sanction, approval or disbursement decision."
+    )
 
-    tab1, tab2 = st.tabs(["Applicant Application", "Admin/Ops Dashboard"])
+    tab1, tab2, tab3 = st.tabs(
+        ["New Application", "Track Application", "Operations Dashboard"]
+    )
 
     with tab1:
-        applicant_ui()
-
+        new_application_ui()
 
     with tab2:
-        admin_ui()    
+        track_application_ui()
+
+    with tab3:
+        operations_dashboard_ui()
 
 
-if __name__ =="__main__":
+if __name__ == "__main__":
     main()
