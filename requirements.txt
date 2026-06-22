@@ -8,3 +8,5 @@ langchain-core
 langchain-ollama
 opik
 sqlalchemy
+langchain-groq
+groq
