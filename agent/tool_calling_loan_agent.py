@@ -11,6 +11,8 @@ Important:
   2. PostgreSQL tables against application_id/thread_id
 """
 
+from __future__ import annotations
+
 import json
 import os
 import uuid
@@ -20,6 +22,7 @@ import opik
 from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain_core.tools import tool
+from pydantic import BaseModel, Field
 
 from agent.conversation_store import load_conversation_state, save_conversation_state
 from agent.db_store import (
@@ -54,6 +57,73 @@ class AgenticLoanState(TypedDict, total=False):
     tool_trace: list[dict[str, Any]]
 
 
+class UpdateApplicationStateInput(BaseModel):
+    loan_amount: int | None = Field(
+        default=None,
+        description="Loan amount in INR. Example: 56 lakhs = 5600000.",
+    )
+    monthly_income: int | None = Field(
+        default=None,
+        description="Monthly income in INR. Example: 4 lakhs = 400000.",
+    )
+    credit_score: int | None = Field(
+        default=None,
+        description="Applicant credit score.",
+    )
+    existing_emi: int | None = Field(
+        default=None,
+        description="Current monthly EMI obligations in INR.",
+    )
+    age: int | None = Field(
+        default=None,
+        description="Applicant age.",
+    )
+    employment_type: str | None = Field(
+        default=None,
+        description="Employment type, for example salaried or self-employed.",
+    )
+    property_value: int | None = Field(
+        default=None,
+        description="Property value in INR. Example: 2.3 crores = 23000000.",
+    )
+    property_location: str | None = Field(
+        default=None,
+        description="Property city/location.",
+    )
+    pan_available: bool | None = Field(
+        default=None,
+        description="Whether PAN card is available.",
+    )
+    id_proof_available: bool | None = Field(
+        default=None,
+        description="Whether ID proof is available.",
+    )
+    address_proof_available: bool | None = Field(
+        default=None,
+        description="Whether address proof is available.",
+    )
+    submitted_documents: list[str] | None = Field(
+        default=None,
+        description=(
+            "Canonical submitted document IDs only. Use values like pan_card, "
+            "id_proof, address_proof, bank_statement, property_title_deed, "
+            "sale_agreement, salary_slips, form_16, employment_proof, "
+            "builder_noc, approved_building_plan."
+        ),
+    )
+    documents_confirmed: bool | None = Field(
+        default=None,
+        description=(
+            "True only when user says documents were submitted, uploaded, "
+            "provided, attached, sent, or shared."
+        ),
+    )
+
+
+class EmptyToolInput(BaseModel):
+    pass
+
+
 def create_thread_id() -> str:
     return f"loan-thread-{uuid.uuid4().hex[:8]}"
 
@@ -82,15 +152,122 @@ def create_initial_agentic_state(thread_id: str) -> AgenticLoanState:
 
 
 def safe_db_call(function_name: str, callback) -> None:
-    """
-    DB writes should not crash the chat flow.
-    If PostgreSQL has an issue, the app still continues using conversation state.
-    """
-
     try:
         callback()
     except Exception as error:
         print(f"[DB WARNING] {function_name} failed: {error}")
+
+
+GENERAL_QUESTION_PATTERNS = [
+    "what is ltv",
+    "what does ltv",
+    "what is foir",
+    "what does foir",
+    "what is emi",
+    "how is emi",
+    "what documents are required",
+    "which documents are required",
+    "documents required for a home loan",
+    "home loan documents",
+    "how does a home loan work",
+    "what is a credit score",
+]
+
+
+def is_general_education_question(user_message: str, state: AgenticLoanState) -> bool:
+    message = user_message.lower().strip()
+    has_active_application = bool(state.get("application"))
+
+    if has_active_application:
+        return False
+
+    return any(pattern in message for pattern in GENERAL_QUESTION_PATTERNS)
+
+
+def direct_education_answer(user_message: str) -> str:
+    message = user_message.lower().strip()
+
+    if "document" in message:
+        return (
+            "Common documents required for a home loan usually include PAN card, "
+            "ID proof, address proof, recent bank statements, income proof such as "
+            "salary slips or Form 16, employment proof, and property documents such as "
+            "property title deed, sale agreement, builder NOC, and approved building plan. "
+            "The exact list can vary by lender and applicant type."
+        )
+
+    if "ltv" in message:
+        return (
+            "LTV stands for Loan-to-Value ratio. It compares the loan amount with the "
+            "property value. For example, if a property is worth ₹1 crore and the lender "
+            "offers ₹80 lakhs, the LTV is 80%. The remaining amount is usually paid as "
+            "down payment."
+        )
+
+    if "foir" in message:
+        return (
+            "FOIR stands for Fixed Obligation to Income Ratio. It shows how much of your "
+            "monthly income is already committed to EMIs and other fixed obligations. "
+            "Lenders use it to judge whether you can afford a new loan EMI."
+        )
+
+    if "emi" in message:
+        return (
+            "EMI stands for Equated Monthly Instalment. It is the fixed monthly payment "
+            "you make towards a loan, covering both principal and interest."
+        )
+
+    if "credit score" in message:
+        return (
+            "A credit score reflects your creditworthiness based on your repayment history, "
+            "credit usage, and borrowing behaviour. A higher score usually improves home "
+            "loan eligibility."
+        )
+
+    return (
+        "I can answer general home loan questions directly. You can also tell me if you "
+        "want to start a home loan application."
+    )
+
+
+def should_allow_assessment(state: AgenticLoanState) -> tuple[bool, list[str]]:
+    application = state.get("application", {})
+
+    required_fields = [
+        "loan_amount",
+        "monthly_income",
+        "credit_score",
+        "existing_emi",
+        "age",
+        "employment_type",
+        "property_value",
+        "property_location",
+        "pan_available",
+        "id_proof_available",
+        "address_proof_available",
+        "documents_confirmed",
+    ]
+
+    missing = []
+
+    for field in required_fields:
+        value = application.get(field)
+
+        if field in {
+            "pan_available",
+            "id_proof_available",
+            "address_proof_available",
+            "documents_confirmed",
+        }:
+            if value is not True:
+                missing.append(field)
+        elif value in [None, ""]:
+            missing.append(field)
+
+    if not application.get("submitted_documents"):
+        missing.append("submitted_documents")
+
+    return len(missing) == 0, missing
 
 
 def format_assessment_summary(result: dict[str, Any]) -> str:
@@ -145,14 +322,73 @@ def build_system_prompt(state: AgenticLoanState) -> str:
     return f"""
 You are an agent-driven home loan origination assistant.
 
-The UI only sends the user message and Application ID.
-You decide whether to answer directly, collect details, call tools, run assessment,
-explain the result, or close the conversation.
+CRITICAL TOOL POLICY:
 
-Important design rule:
-- Direct answers are handled by your default assistant behaviour.
-- There is no final_response tool.
-- Only call backend tools when an external or deterministic action is needed.
+GENERAL EDUCATION QUESTIONS:
+If user asks a general question like:
+- What is LTV?
+- What documents are required for a home loan?
+- What is FOIR?
+- What is EMI?
+- What is a credit score?
+
+Then answer directly.
+Do NOT call tools.
+Do NOT update application state.
+Do NOT check readiness.
+Do NOT run assessment.
+Do NOT create DB records.
+
+APPLICATION UPDATE:
+Only call update_application_state_tool when user provides applicant-specific details:
+loan amount, income, credit score, EMI, age, employment type, property value,
+property location, document availability, or submitted/uploaded documents.
+
+ASSESSMENT RULE:
+Never run assessment after only financial/property details.
+Only run assessment after:
+1. financial details are collected,
+2. property details are collected,
+3. PAN/ID/address proof availability is collected,
+4. submitted/uploaded documents are collected,
+5. check_application_readiness_tool confirms readiness.
+
+DOCUMENT RULE:
+Document availability is not document submission.
+"I have PAN card available" means availability only.
+Only submitted/uploaded/provided/attached/sent/shared means submitted.
+
+For document availability only:
+- call update_application_state_tool
+- ask which documents have been submitted/uploaded
+- do not run assessment
+
+For submitted documents:
+- call update_application_state_tool
+- send only submitted_documents and documents_confirmed unless user explicitly corrects other fields
+- use canonical document IDs only
+
+Canonical document IDs:
+pan_card
+id_proof
+address_proof
+bank_statement
+property_title_deed
+sale_agreement
+salary_slips
+form_16
+employment_proof
+builder_noc
+approved_building_plan
+itr_returns
+business_proof
+profit_loss_statement
+
+FINAL ANSWER RULE:
+For assessment results, clearly say this is an initial eligibility assessment only,
+not final sanction or guaranteed approval.
+
+There is no final_response tool. Direct answers are your normal assistant output.
 
 Current Application ID:
 {state.get("thread_id")}
@@ -166,112 +402,37 @@ Current missing fields:
 Current assessment result:
 {assessment_result}
 
-Your registered tools are:
-
+Registered tools:
 1. update_application_state_tool
-Use when the user provides application details such as loan amount, income,
-credit score, EMI, age, employment type, property value, property location,
-KYC availability, or submitted documents.
-
 2. check_application_readiness_tool
-Use when you need to check whether the application has all required fields
-before assessment.
-
 3. run_home_loan_assessment_tool
-Use only when the application is ready for assessment.
-
 4. close_conversation_tool
-Use when the user says finish, done, close, end, no thanks, or says they have
-no more questions.
-
-Conversation rules:
-- General home-loan questions should be answered directly without calling a tool.
-- After assessment, answer follow-up questions directly unless the user changes application details.
-- If the user changes details after assessment, call update_application_state_tool.
-- Do not behave like a fixed finite state machine.
-- Do not ask for fields already present unless the user wants to correct them.
-- Ask natural follow-up questions based on the current application state.
-- Do not treat "documents available" as "documents submitted".
-- Only submitted/uploaded/provided/attached/sent/shared documents count as submitted documents.
-- If application details are complete, check readiness and then run assessment.
-- After running assessment, explain the assessment summary to the user.
-
-Required application fields before assessment:
-- loan_amount
-- monthly_income
-- credit_score
-- existing_emi
-- age
-- employment_type
-- property_value
-- property_location
-- pan_available
-- id_proof_available
-- address_proof_available
-- documents_confirmed
-
-Supported extracted fields:
-- loan_amount
-- monthly_income
-- credit_score
-- existing_emi
-- age
-- employment_type
-- property_value
-- property_location
-- pan_available
-- id_proof_available
-- address_proof_available
-- submitted_documents
-- documents_confirmed
 
 Money normalization:
-- 56 lakhs = 5600000
-- 4 lakhs = 400000
-- 2.3 crores = 23000000
-- 90 lakhs = 9000000
-- 1.2 lakhs = 120000
-- 1 crore = 10000000
+56 lakhs = 5600000
+4 lakhs = 400000
+2.3 crores = 23000000
+90 lakhs = 9000000
+1.2 lakhs = 120000
+1 crore = 10000000
 
-Document availability rules:
-- "I have PAN card available" means pan_available true.
-- "I have ID proof available" means id_proof_available true.
-- "I have address proof available" means address_proof_available true.
-- "I have all documents available" means availability only, not submitted.
+Examples:
+User: What documents are required for a home loan?
+Correct: answer directly, no tool.
 
-Document submission rules:
-- If user says they submitted/uploaded/provided/attached/sent/shared documents,
-  call update_application_state_tool.
-- submitted_documents must be a list.
-- Also set documents_confirmed true.
-- Use canonical document names:
-  pan_card
-  id_proof
-  address_proof
-  bank_statement
-  property_title_deed
-  sale_agreement
-  salary_slips
-  form_16
-  employment_proof
-  builder_noc
-  approved_building_plan
-  itr_returns
-  business_proof
-  profit_loss_statement
+User: I want a loan of 56 lakhs, income 4 lakhs, credit score 700.
+Correct: call update_application_state_tool, then ask for missing details/documents. Do not assess.
 
-Examples of direct answer behaviour:
-- User asks "What is LTV?" -> answer directly, no tool.
-- User asks "What documents are required?" -> answer directly, no tool.
-- User asks "Can you explain this result?" after assessment -> answer directly, no tool.
+User: I have PAN card available, ID proof available, and address proof available.
+Correct: call update_application_state_tool. Do not assess. Ask which documents are submitted/uploaded.
 
-Examples of tool behaviour:
-- User gives loan amount/income/credit score/property details -> call update_application_state_tool.
-- User gives PAN/ID/address proof availability -> call update_application_state_tool.
-- User submits documents -> call update_application_state_tool.
-- Application looks complete -> call check_application_readiness_tool.
-- Readiness is true -> call run_home_loan_assessment_tool.
-- User says finish/done/close -> call close_conversation_tool.
+User: I have submitted PAN card, ID proof, address proof, bank statement, property title deed, sale agreement, salary slips, Form 16, employment proof, builder NOC and approved building plan.
+Correct: call update_application_state_tool with submitted_documents and documents_confirmed=true.
+Then call check_application_readiness_tool.
+If ready, call run_home_loan_assessment_tool.
+
+User: finish
+Correct: call close_conversation_tool.
 """
 
 
@@ -321,10 +482,7 @@ def get_last_assistant_message(agent_result: dict[str, Any]) -> str:
     return ""
 
 
-def persist_application_state(
-    state: AgenticLoanState,
-    status: str,
-) -> None:
+def persist_application_state(state: AgenticLoanState, status: str) -> None:
     safe_db_call(
         "upsert_application_state",
         lambda: upsert_application_state(
@@ -354,23 +512,51 @@ def persist_tool_event(
     )
 
 
+def clean_extracted_fields(raw_fields: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in raw_fields.items()
+        if value is not None
+    }
+
+
 def create_home_loan_agent(state: AgenticLoanState):
-    """
-    Creates a native create_agent instance with tools bound to the current
-    Application ID/thread state.
-
-    The agent decides when to call tools.
-    The tools update state and persist to PostgreSQL against application_id.
-    """
-
-    @tool
-    def update_application_state_tool(extracted_fields: dict[str, Any]) -> str:
+    @tool(args_schema=UpdateApplicationStateInput)
+    def update_application_state_tool(
+        loan_amount: int | None = None,
+        monthly_income: int | None = None,
+        credit_score: int | None = None,
+        existing_emi: int | None = None,
+        age: int | None = None,
+        employment_type: str | None = None,
+        property_value: int | None = None,
+        property_location: str | None = None,
+        pan_available: bool | None = None,
+        id_proof_available: bool | None = None,
+        address_proof_available: bool | None = None,
+        submitted_documents: list[str] | None = None,
+        documents_confirmed: bool | None = None,
+    ) -> str:
         """
-        Update the current loan application state using extracted user-provided fields.
-
-        Use this tool when the user provides loan details, property details,
-        KYC availability, or submitted documents.
+        Update application state with applicant-specific fields.
         """
+        extracted_fields = clean_extracted_fields(
+            {
+                "loan_amount": loan_amount,
+                "monthly_income": monthly_income,
+                "credit_score": credit_score,
+                "existing_emi": existing_emi,
+                "age": age,
+                "employment_type": employment_type,
+                "property_value": property_value,
+                "property_location": property_location,
+                "pan_available": pan_available,
+                "id_proof_available": id_proof_available,
+                "address_proof_available": address_proof_available,
+                "submitted_documents": submitted_documents,
+                "documents_confirmed": documents_confirmed,
+            }
+        )
 
         result = deterministic_update_application(
             current_application=state.get("application", {}),
@@ -384,20 +570,14 @@ def create_home_loan_agent(state: AgenticLoanState):
 
         trace_item = {
             "action": "update_application_state_tool",
-            "tool_args": {
-                "extracted_fields": extracted_fields,
-            },
+            "tool_args": {"extracted_fields": extracted_fields},
             "tool_result": result,
         }
 
         state.setdefault("tool_trace", []).append(trace_item)
-
         save_conversation_state(state["thread_id"], state)
 
-        persist_application_state(
-            state=state,
-            status="in_progress",
-        )
+        persist_application_state(state=state, status="in_progress")
 
         persist_tool_event(
             state=state,
@@ -415,16 +595,14 @@ def create_home_loan_agent(state: AgenticLoanState):
                 "application": result.get("application", {}),
             },
             indent=2,
+            default=str,
         )
 
-    @tool
+    @tool(args_schema=EmptyToolInput)
     def check_application_readiness_tool() -> str:
         """
-        Check whether the current application has all required fields before assessment.
-
-        Use this tool before running the final home loan assessment.
+        Check whether current application is ready for assessment.
         """
-
         result = deterministic_check_readiness(
             application=state.get("application", {})
         )
@@ -440,13 +618,9 @@ def create_home_loan_agent(state: AgenticLoanState):
         }
 
         state.setdefault("tool_trace", []).append(trace_item)
-
         save_conversation_state(state["thread_id"], state)
 
-        persist_application_state(
-            state=state,
-            status="in_progress",
-        )
+        persist_application_state(state=state, status="in_progress")
 
         persist_tool_event(
             state=state,
@@ -455,16 +629,49 @@ def create_home_loan_agent(state: AgenticLoanState):
             tool_result=result,
         )
 
-        return json.dumps(result, indent=2)
+        return json.dumps(result, indent=2, default=str)
 
-    @tool
+    @tool(args_schema=EmptyToolInput)
     def run_home_loan_assessment_tool() -> str:
         """
-        Run the deterministic home loan assessment after the application is complete.
-
-        This checks EMI, DTI, FOIR, LTV, KYC, CIBIL/credit score,
-        document completeness, risk level, and final loan decision.
+        Run deterministic assessment only after application is complete.
         """
+        can_assess, missing_for_assessment = should_allow_assessment(state)
+
+        if not can_assess:
+            result = {
+                "assessment_ran": False,
+                "ready_for_assessment": False,
+                "missing_fields": missing_for_assessment,
+                "message": (
+                    "Assessment cannot be run yet. Required applicant details, "
+                    "document availability, and submitted documents must be collected first."
+                ),
+            }
+
+            state["missing_fields"] = missing_for_assessment
+            state["is_ready_for_assessment"] = False
+            state["last_agent_action"] = "run_home_loan_assessment_tool_blocked"
+
+            trace_item = {
+                "action": "run_home_loan_assessment_tool",
+                "tool_args": {},
+                "tool_result": result,
+            }
+
+            state.setdefault("tool_trace", []).append(trace_item)
+            save_conversation_state(state["thread_id"], state)
+
+            persist_application_state(state=state, status="in_progress")
+
+            persist_tool_event(
+                state=state,
+                tool_name="run_home_loan_assessment_tool",
+                tool_args={},
+                tool_result=result,
+            )
+
+            return json.dumps(result, indent=2, default=str)
 
         result = deterministic_run_assessment(
             application=state.get("application", {})
@@ -492,7 +699,6 @@ def create_home_loan_agent(state: AgenticLoanState):
         }
 
         state.setdefault("tool_trace", []).append(trace_item)
-
         save_conversation_state(state["thread_id"], state)
 
         persist_application_state(
@@ -516,17 +722,13 @@ def create_home_loan_agent(state: AgenticLoanState):
             tool_result=result,
         )
 
-        return json.dumps(result, indent=2)
+        return json.dumps(result, indent=2, default=str)
 
-    @tool
+    @tool(args_schema=EmptyToolInput)
     def close_conversation_tool() -> str:
         """
-        Close the current home loan conversation/application thread.
-
-        Use this when the user says finish, done, close, end, no thanks,
-        or says they have no more questions.
+        Close the current conversation/application.
         """
-
         result = deterministic_close_conversation()
 
         state["conversation_closed"] = True
@@ -539,7 +741,6 @@ def create_home_loan_agent(state: AgenticLoanState):
         }
 
         state.setdefault("tool_trace", []).append(trace_item)
-
         save_conversation_state(state["thread_id"], state)
 
         safe_db_call(
@@ -556,7 +757,7 @@ def create_home_loan_agent(state: AgenticLoanState):
             tool_result=result,
         )
 
-        return json.dumps(result, indent=2)
+        return json.dumps(result, indent=2, default=str)
 
     tools = [
         update_application_state_tool,
@@ -608,6 +809,31 @@ def run_agentic_loan_turn(
     )
 
     state["messages"] = messages
+
+    if is_general_education_question(user_message, state):
+        assistant_message = direct_education_answer(user_message)
+
+        messages.append(
+            {
+                "role": "assistant",
+                "content": assistant_message,
+            }
+        )
+
+        state["messages"] = messages
+        state["last_agent_action"] = "direct_response"
+        save_conversation_state(thread_id, state)
+
+        return {
+            "thread_id": thread_id,
+            "assistant_message": assistant_message,
+            "messages": state.get("messages", []),
+            "application": state.get("application", {}),
+            "missing_fields": state.get("missing_fields", []),
+            "assessment_result": state.get("assessment_result"),
+            "is_ready_for_assessment": state.get("is_ready_for_assessment", False),
+            "state": state,
+        }
 
     if state.get("conversation_closed"):
         assistant_message = (
@@ -662,12 +888,27 @@ def run_agentic_loan_turn(
     if tool_trace_after == tool_trace_before:
         state["last_agent_action"] = "direct_response"
 
-    if not assistant_message:
+    # IMPORTANT FIX:
+    # After assessment runs, always return the deterministic assessment summary.
+    # This prevents weak applicant cases from returning only a short disclaimer.
+    if (
+        state.get("assessment_result")
+        and state.get("last_agent_action") == "run_home_loan_assessment_tool"
+    ):
+        assistant_message = format_assessment_summary(state["assessment_result"])
+
+    elif not assistant_message:
         if state.get("assessment_result"):
             assistant_message = format_assessment_summary(state["assessment_result"])
         elif state.get("missing_fields"):
-            next_missing = state["missing_fields"][0].replace("_", " ")
-            assistant_message = f"Please provide your {next_missing} so I can continue."
+            missing_text = ", ".join(
+                field.replace("_", " ")
+                for field in state.get("missing_fields", [])[:5]
+            )
+            assistant_message = (
+                f"I still need the following details before I can continue: {missing_text}. "
+                "Please provide them when ready."
+            )
         else:
             assistant_message = (
                 "I have updated your home loan application. Please provide the next "
@@ -682,7 +923,6 @@ def run_agentic_loan_turn(
     )
 
     state["messages"] = messages
-
     save_conversation_state(thread_id, state)
 
     return {

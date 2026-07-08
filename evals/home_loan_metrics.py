@@ -1,22 +1,22 @@
-"""Home Loan Agent eval metrics 
-Focus areas: 
-1. Final response eval
-2. Agent trajectory eval
-3. Db=Backend persistence eval
-4. Regression eval"""
+"""
+Home Loan Agent Evaluation Metrics
 
-
+Metrics:
+1. Final response
+2. Agent trajectory
+3. DB persistence
+4. Overall regression
+"""
 
 from __future__ import annotations
 
-from typing import Any 
+from typing import Any
 
-def normalize_text(value: str| None)->str:
-    """Normalize text for simple phrase matching """
+
+def normalize_text(value: str | None) -> str:
     if not value:
         return ""
     return value.lower().strip()
-
 
 
 def final_response_score(
@@ -24,56 +24,38 @@ def final_response_score(
     must_include: list[str] | None = None,
     must_not_include: list[str] | None = None,
 ) -> dict[str, Any]:
-    """
-    Score the final response.
-
-    Checks:
-    - Required phrases are present.
-    - Unsafe phrases are absent.
-
-    Returns score between 0 and 1.
-    """
     must_include = must_include or []
     must_not_include = must_not_include or []
 
     response = normalize_text(final_response)
 
-    missing_required_phrases = []
-    for phrase in must_include:
-        if normalize_text(phrase) not in response:
-            missing_required_phrases.append(phrase)
+    missing_required_phrases = [
+        phrase
+        for phrase in must_include
+        if normalize_text(phrase) not in response
+    ]
 
-    unsafe_phrases_found = []
-    for phrase in must_not_include:
-        if normalize_text(phrase) in response:
-            unsafe_phrases_found.append(phrase)
+    unsafe_phrases_found = [
+        phrase
+        for phrase in must_not_include
+        if normalize_text(phrase) in response
+    ]
 
     include_score = 1.0 if not missing_required_phrases else 0.0
     safety_score = 1.0 if not unsafe_phrases_found else 0.0
 
     score = (include_score + safety_score) / 2
 
-    passed = score == 1.0
-
     return {
         "metric_name": "final_response",
         "score": score,
-        "passed": passed,
+        "passed": score == 1.0,
         "missing_required_phrases": missing_required_phrases,
         "unsafe_phrases_found": unsafe_phrases_found,
     }
 
 
 def extract_tool_names_from_trace(tool_trace: list[Any] | None) -> list[str]:
-    """
-    Extract tool names from state['tool_trace'].
-
-    Supports common formats:
-    - [{"tool_name": "..."}]
-    - [{"name": "..."}]
-    - [{"tool": "..."}]
-    - ["tool_name"]
-    """
     if not tool_trace:
         return []
 
@@ -102,17 +84,6 @@ def trajectory_score(
     expected_tools: list[str],
     actual_tool_trace: list[Any] | None,
 ) -> dict[str, Any]:
-    """
-    Score agent trajectory.
-
-    Checks whether the expected tool sequence matches the actual tool sequence.
-
-    Scoring:
-    - 1.0 = exact sequence match
-    - 0.7 = same tools but order differs
-    - 0.4 = expected tools are subset of actual tools but extra tools exist
-    - 0.0 = missing important tools or wrong trajectory
-    """
     actual_tools = extract_tool_names_from_trace(actual_tool_trace)
 
     if expected_tools == actual_tools:
@@ -161,18 +132,6 @@ def db_persistence_score(
     expected_assessment_saved: bool,
     db_snapshot: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    """
-    Score DB persistence.
-
-    db_snapshot will later come from PostgreSQL and should look like:
-
-    {
-        "application_exists": True,
-        "status": "assessed",
-        "assessment_exists": True,
-        "tool_event_count": 5
-    }
-    """
     if db_snapshot is None:
         db_snapshot = {
             "application_exists": False,
@@ -203,11 +162,10 @@ def db_persistence_score(
         )
 
     passed = len(failures) == 0
-    score = 1.0 if passed else 0.0
 
     return {
         "metric_name": "db_persistence",
-        "score": score,
+        "score": 1.0 if passed else 0.0,
         "passed": passed,
         "failures": failures,
         "db_snapshot": db_snapshot,
@@ -219,22 +177,14 @@ def overall_regression_score(
     trajectory_eval: dict[str, Any],
     db_eval: dict[str, Any],
 ) -> dict[str, Any]:
-    """
-    Combine all scores into one regression score.
-
-    Weights:
-    - Agent trajectory: 40%
-    - DB persistence: 35%
-    - Final response: 25%
-    """
     final_score = float(final_response_eval["score"])
-    trajectory = float(trajectory_eval["score"])
-    db_score = float(db_eval["score"])
+    trajectory_score_value = float(trajectory_eval["score"])
+    db_score_value = float(db_eval["score"])
 
     weighted_score = (
-        (trajectory * 0.40)
-        + (db_score * 0.35)
-        + (final_score * 0.25)
+        trajectory_score_value * 0.40
+        + db_score_value * 0.35
+        + final_score * 0.25
     )
 
     passed = (
@@ -249,8 +199,8 @@ def overall_regression_score(
         "passed": passed,
         "component_scores": {
             "final_response": final_score,
-            "agent_trajectory": trajectory,
-            "db_persistence": db_score,
+            "agent_trajectory": trajectory_score_value,
+            "db_persistence": db_score_value,
         },
     }
 
@@ -261,11 +211,6 @@ def evaluate_case_result(
     actual_tool_trace: list[Any] | None,
     db_snapshot: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    """
-    Evaluate one complete test case result.
-
-    This is the main helper used by the evaluation runner.
-    """
     final_response_eval = final_response_score(
         final_response=final_response,
         must_include=case.get("must_include", []),
@@ -278,7 +223,10 @@ def evaluate_case_result(
     )
 
     db_eval = db_persistence_score(
-        expected_application_should_exist=case.get("expected_application_should_exist", False),
+        expected_application_should_exist=case.get(
+            "expected_application_should_exist",
+            False,
+        ),
         expected_db_status=case.get("expected_db_status"),
         expected_assessment_saved=case.get("expected_assessment_saved", False),
         db_snapshot=db_snapshot,
@@ -301,35 +249,28 @@ def evaluate_case_result(
 
 
 def print_evaluation_result(result: dict[str, Any]) -> None:
-    """
-    Pretty print one evaluation result.
-    """
     print("=" * 100)
     print(f"Case: {result['case_id']}")
     print(f"Description: {result['description']}")
     print("-" * 100)
 
     print(
-        f"Final response: "
-        f"{result['final_response_eval']['score']} | "
+        f"Final response: {result['final_response_eval']['score']} | "
         f"Passed: {result['final_response_eval']['passed']}"
     )
 
     print(
-        f"Trajectory: "
-        f"{result['trajectory_eval']['score']} | "
+        f"Trajectory: {result['trajectory_eval']['score']} | "
         f"Passed: {result['trajectory_eval']['passed']}"
     )
 
     print(
-        f"DB persistence: "
-        f"{result['db_eval']['score']} | "
+        f"DB persistence: {result['db_eval']['score']} | "
         f"Passed: {result['db_eval']['passed']}"
     )
 
     print(
-        f"Overall regression: "
-        f"{result['overall_eval']['score']} | "
+        f"Overall regression: {result['overall_eval']['score']} | "
         f"Passed: {result['overall_eval']['passed']}"
     )
 
