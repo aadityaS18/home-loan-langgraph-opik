@@ -10,3 +10,4 @@ opik
 sqlalchemy
 langchain-groq
 groq
+psycopg2-binary

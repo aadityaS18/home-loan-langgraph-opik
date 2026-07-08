@@ -1,15 +1,13 @@
 """
-Groq-based LLM extractor for conversational home loan journey.
+Groq-powered LLM utilities for the agent-driven loan chatbot.
 
-Purpose:
-- Convert natural user replies into structured application fields.
-- Example:
-    "around 35 lakhs" -> {"loan_amount": 3500000}
-    "85k per month" -> {"monthly_income": 85000}
-    "yes" when asked for PAN -> {"pan_available": true}
-    "PAN card and bank statement only" -> {"submitted_documents": ["pan_card", "bank_statement"], "documents_confirmed": true}
+This file handles:
+1. Intent classification
+2. Field extraction
+3. Dynamic agent response generation
 
-The LLM extracts fields only. It does not make loan decisions.
+The LLM does NOT approve or reject the loan.
+Final loan decisions still come from deterministic tools.
 """
 
 import json
@@ -59,6 +57,7 @@ DOCUMENT_ALIASES = {
     "aadhaar": "id_proof",
     "aadhar": "id_proof",
     "passport": "id_proof",
+    "voter id": "id_proof",
     "address": "address_proof",
     "address proof": "address_proof",
     "utility bill": "address_proof",
@@ -81,16 +80,65 @@ DOCUMENT_ALIASES = {
 }
 
 
-EXTRACTION_SYSTEM_PROMPT = """
+CANONICAL_DOCUMENTS = {
+    "pan_card",
+    "id_proof",
+    "address_proof",
+    "bank_statement",
+    "property_title_deed",
+    "sale_agreement",
+    "salary_slips",
+    "form_16",
+    "employment_proof",
+    "builder_noc",
+    "approved_building_plan",
+}
+
+
+INTENT_PROMPT = """
+You are an intent classifier for a home loan chatbot.
+
+Classify the user message into exactly one intent:
+
+- general_question
+  The user is asking about home loans, documents, EMI, LTV, eligibility, process, interest rate, etc.
+  They are not necessarily applying.
+
+- application_data
+  The user is providing information for their loan application.
+
+- correction
+  The user is correcting or updating a previous answer.
+
+- assessment_request
+  The user is asking to calculate, check eligibility, run assessment, proceed, continue, or tell final result.
+
+- resume_request
+  The user wants to continue or resume an old application.
+
+Important:
+- "I want to apply for a home loan" is application_data.
+- "sure", "yes proceed", "run assessment", "check eligibility" is assessment_request.
+- "what documents are required?" is general_question.
+- "what is LTV?" is general_question.
+
+Return JSON only:
+{
+  "intent": "...",
+  "confidence": 0.0,
+  "reason": "short reason"
+}
+"""
+
+
+EXTRACTION_PROMPT = """
 You are an information extraction assistant for a conversational home loan application.
 
-Your task:
-- Extract only fields clearly provided by the user.
-- Return valid JSON only.
-- Do not return markdown.
-- Do not guess values.
-- Do not make loan decisions.
-- Do not explain anything.
+Extract only fields clearly provided by the user.
+Return valid JSON only.
+Do not guess.
+Do not explain.
+Do not make loan decisions.
 
 Supported fields:
 - name
@@ -111,22 +159,61 @@ Supported fields:
 - submitted_documents
 - documents_confirmed
 
+Strict extraction rules:
+- Extract only what the user explicitly provided.
+- Do not assume or infer document availability.
+- Do not set pan_available, id_proof_available, or address_proof_available unless the user clearly says they have or do not have those documents.
+- Do not set submitted_documents unless the user clearly says submitted, uploaded, provided, attached, shared, sent, or given documents.
+- Do not treat "I want to apply for a home loan" as confirmation of PAN, ID proof, address proof, or submitted documents.
+- Do not infer loan_amount, income, documents, or credit score from general home-loan questions.
+- "Documents available" and "documents submitted" are different.
+- If user says documents are available, do not mark submitted_documents.
+- If user says documents are submitted/uploaded/provided, then extract submitted_documents.
+
 Money normalization:
 - 35 lakhs -> 3500000
 - 35 lakh -> 3500000
 - 85k -> 85000
 - 1 crore -> 10000000
 
+Important money field rule:
+- If the user says income, salary, monthly income, or earnings, extract monthly_income.
+- If the user says loan amount, borrow, looking for loan, applying for loan, or want loan, extract loan_amount.
+- If the user says existing EMI, current EMI, or currently pay EMI, extract existing_emi.
+- If the user says property value, house value, flat value, or property price, extract property_value.
+- Do not infer loan_amount from income.
+- Do not infer monthly_income from loan_amount.
+
 Employment normalization:
 - salaried -> "salaried"
 - self employed / business / self-employed -> "self-employed"
 
 Boolean normalization:
-- yes / I have / available / uploaded / submitted -> true
-- no / not available / missing / don't have / not uploaded -> false
+Only extract these if the user explicitly refers to the document or if the current missing field is specifically asking about it:
+- pan_available
+- id_proof_available
+- address_proof_available
+
+Examples:
+User: I have PAN card
+JSON: {"pan_available": true}
+
+User: I do not have ID proof
+JSON: {"id_proof_available": false}
+
+User: yes
+Context missing field: pan_available
+JSON: {"pan_available": true}
+
+User: I want to apply for a home loan
+JSON: {}
 
 Document extraction:
-If user says documents they submitted, return submitted_documents as a list using these canonical names:
+If the user lists submitted/uploaded/provided documents, return submitted_documents as canonical names.
+
+If the user says they have NOT submitted some documents, do NOT include those documents in submitted_documents.
+
+Canonical document names:
 - pan_card
 - id_proof
 - address_proof
@@ -139,42 +226,87 @@ If user says documents they submitted, return submitted_documents as a list usin
 - builder_noc
 - approved_building_plan
 
-If user says no documents / none / nothing submitted, return:
+Example:
+User:
+I submitted PAN card, ID proof and bank statement but I have not submitted builder NOC.
+
+JSON:
+{
+  "submitted_documents": ["pan_card", "id_proof", "bank_statement"],
+  "documents_confirmed": true
+}
+
+Example:
+User:
+I have PAN card available.
+
+JSON:
+{
+  "pan_available": true
+}
+
+Do NOT return submitted_documents for that example.
+
+If user says none/no documents submitted:
 {
   "submitted_documents": [],
   "documents_confirmed": true
 }
 
-Examples:
-User: Around 35 lakhs
-JSON:
-{"loan_amount": 3500000}
-
-User: 85k per month
-JSON:
-{"monthly_income": 85000}
-
-User: yes
-Context missing field: pan_available
-JSON:
-{"pan_available": true}
-
-User: no
-Context missing field: id_proof_available
-JSON:
-{"id_proof_available": false}
-
-User: PAN card and bank statement only
-JSON:
-{"submitted_documents": ["pan_card", "bank_statement"], "documents_confirmed": true}
-
 Return JSON only.
 """
 
 
-def clean_json_response(content: str) -> dict[str, Any]:
-    """Parse JSON even if the model accidentally returns markdown fences."""
+AGENT_RESPONSE_PROMPT = """
+You are a professional home loan assistant and loan origination agent.
 
+You are not a fixed form.
+You must understand the user's intent before deciding what to do.
+
+You can:
+- Answer general home-loan questions.
+- Explain required documents.
+- Explain EMI, LTV, DTI, FOIR, eligibility, and the home-loan process.
+- Help start a home-loan application when the user wants to apply.
+- Ask the next best question only when the user is applying or continuing an application.
+- Acknowledge corrections.
+- Continue an existing application.
+
+Important rules:
+- If the user is only asking a general home-loan question, answer the question only.
+- Do not force the user into an application flow after a general question.
+- Do not ask for personal financial details unless the user wants to apply, check eligibility, or continue an existing application.
+- If the user asks a general question, you may softly offer help, but do not ask application questions.
+- If the user provides application information, then continue the application naturally.
+- Ask only one focused next question during the application flow.
+- Do not ask a hardcoded list of questions.
+- Do not approve or reject the loan yourself.
+- Final decision comes only from the tool-based assessment.
+- Never say a field has been updated unless it exists in the current application state.
+- Do not print the raw JSON application state to the user.
+- Do not claim PAN, ID proof, address proof, or submitted documents are confirmed unless they are present in the current application state.
+- "Documents available" and "documents submitted" are different.
+- If documents are only available, ask later which documents have been submitted/uploaded.
+- Do not repeatedly ask for a field that is already present in the current application state.
+- If assessment_ready is true, tell the user that the assessment can proceed.
+
+Required application fields before assessment:
+- loan_amount
+- monthly_income
+- credit_score
+- existing_emi
+- age
+- employment_type
+- property_value
+- property_location
+- pan_available
+- id_proof_available
+- address_proof_available
+- documents_confirmed
+"""
+
+
+def clean_json_response(content: str) -> dict[str, Any]:
     text = content.strip()
 
     if text.startswith("```"):
@@ -188,14 +320,8 @@ def clean_json_response(content: str) -> dict[str, Any]:
 
     try:
         parsed = json.loads(text)
-
         if isinstance(parsed, dict):
-            return {
-                key: value
-                for key, value in parsed.items()
-                if key in SUPPORTED_FIELDS
-            }
-
+            return parsed
     except json.JSONDecodeError:
         return {}
 
@@ -203,8 +329,6 @@ def clean_json_response(content: str) -> dict[str, Any]:
 
 
 def parse_money_value(text: str) -> float | None:
-    """Parse money values like 35 lakhs, 85k, 1 crore, 3500000."""
-
     clean_text = text.lower().replace(",", "")
 
     crore_match = re.search(r"(\d+(\.\d+)?)\s*(crore|crores|cr)", clean_text)
@@ -227,8 +351,6 @@ def parse_money_value(text: str) -> float | None:
 
 
 def normalize_boolean_from_text(text: str) -> bool | None:
-    """Normalize yes/no answers from free text."""
-
     clean_text = text.lower().strip()
 
     yes_terms = [
@@ -238,9 +360,12 @@ def normalize_boolean_from_text(text: str) -> bool | None:
         "available",
         "i have",
         "have it",
+        "have that",
         "uploaded",
         "submitted",
         "present",
+        "with me",
+        "all available",
     ]
 
     no_terms = [
@@ -254,6 +379,7 @@ def normalize_boolean_from_text(text: str) -> bool | None:
         "do not have",
         "not uploaded",
         "not submitted",
+        "not with me",
     ]
 
     if clean_text in yes_terms:
@@ -270,24 +396,8 @@ def normalize_boolean_from_text(text: str) -> bool | None:
 
     return None
 
-CANONICAL_DOCUMENTS = {
-    "pan_card",
-    "id_proof",
-    "address_proof",
-    "bank_statement",
-    "property_title_deed",
-    "sale_agreement",
-    "salary_slips",
-    "form_16",
-    "employment_proof",
-    "builder_noc",
-    "approved_building_plan",
-}
-
 
 def extract_document_names(raw_text: str) -> list[str]:
-    """Extract all document names mentioned in text."""
-
     documents: list[str] = []
 
     for phrase, canonical_name in DOCUMENT_ALIASES.items():
@@ -302,8 +412,6 @@ def extract_document_names(raw_text: str) -> list[str]:
 
 
 def extract_negative_documents(raw_text: str) -> list[str]:
-    """Extract documents that user says are not submitted."""
-
     negative_markers = [
         "i have not submitted",
         "i haven't submitted",
@@ -346,32 +454,13 @@ def extract_negative_documents(raw_text: str) -> list[str]:
 
 
 def normalize_documents_from_text(value: Any) -> list[str]:
-    """
-    Normalize document names from user answer.
-
-    If user says both submitted and not submitted documents,
-    only keep submitted documents.
-    """
-
     if value is None:
         return []
 
     if isinstance(value, list):
-        documents: list[str] = []
-
-        for item in value:
-            item_text = str(item).lower().strip()
-
-            if item_text in CANONICAL_DOCUMENTS and item_text not in documents:
-                documents.append(item_text)
-
-            for phrase, canonical_name in DOCUMENT_ALIASES.items():
-                if phrase in item_text and canonical_name not in documents:
-                    documents.append(canonical_name)
-
-        return documents
-
-    raw_text = str(value).lower()
+        raw_text = " ".join(str(item).lower().strip() for item in value)
+    else:
+        raw_text = str(value).lower().strip()
 
     no_document_phrases = [
         "none",
@@ -382,98 +471,248 @@ def normalize_documents_from_text(value: Any) -> list[str]:
         "i havent submitted any documents",
         "haven't submitted any documents",
         "not submitted any documents",
+        "none submitted",
+        "no documents submitted",
     ]
 
-    if raw_text.strip() in no_document_phrases:
+    if raw_text in no_document_phrases:
         return []
 
-    all_mentioned_documents = extract_document_names(raw_text)
+    all_documents = extract_document_names(raw_text)
     negative_documents = extract_negative_documents(raw_text)
 
-    submitted_documents = [
+    return [
         document
-        for document in all_mentioned_documents
+        for document in all_documents
         if document not in negative_documents
     ]
 
-    return submitted_documents
+
+def infer_money_field_from_text(
+    user_message: str,
+    current_missing_fields: list[str],
+) -> str | None:
+    text = user_message.lower().strip()
+
+    income_keywords = [
+        "monthly income",
+        "income",
+        "salary",
+        "earn",
+        "earning",
+        "per month",
+        "monthly salary",
+    ]
+
+    loan_keywords = [
+        "loan amount",
+        "home loan",
+        "borrow",
+        "borrowing",
+        "looking for",
+        "need loan",
+        "want loan",
+        "want a loan",
+        "loan of",
+        "applying for home-loan",
+        "applying for home loan",
+    ]
+
+    existing_emi_keywords = [
+        "existing emi",
+        "current emi",
+        "currently pay",
+        "pay emi",
+        "emi currently",
+        "old emi",
+        "car loan",
+        "credit card",
+    ]
+
+    property_keywords = [
+        "property value",
+        "property price",
+        "house value",
+        "flat value",
+        "home value",
+        "property is worth",
+        "worth",
+    ]
+
+    if any(keyword in text for keyword in income_keywords):
+        return "monthly_income"
+
+    if any(keyword in text for keyword in existing_emi_keywords):
+        return "existing_emi"
+
+    if any(keyword in text for keyword in property_keywords):
+        return "property_value"
+
+    if any(keyword in text for keyword in loan_keywords):
+        return "loan_amount"
+
+    if current_missing_fields:
+        first_missing = current_missing_fields[0]
+
+        if first_missing in [
+            "loan_amount",
+            "monthly_income",
+            "existing_emi",
+            "property_value",
+            "interest_rate",
+        ]:
+            return first_missing
+
+    return None
 
 
 def fallback_extract(
     user_message: str,
     current_missing_fields: list[str],
 ) -> dict[str, Any]:
-    """
-    Rule-based fallback for common short replies.
-
-    This also corrects common LLM extraction mistakes like:
-    "85k" should be 85000, not 500000.
-    """
-
     text = user_message.lower().strip()
     extracted: dict[str, Any] = {}
 
     if not current_missing_fields:
         return extracted
 
-    next_field = current_missing_fields[0]
+    money_value = parse_money_value(text)
 
-    if next_field in [
-        "loan_amount",
-        "monthly_income",
-        "existing_emi",
-        "property_value",
-        "interest_rate",
-    ]:
-        money_value = parse_money_value(text)
+    if money_value is not None:
+        money_field = infer_money_field_from_text(
+            user_message=user_message,
+            current_missing_fields=current_missing_fields,
+        )
 
-        if money_value is not None:
-            extracted[next_field] = money_value
+        if money_field is not None:
+            extracted[money_field] = money_value
 
-    if next_field == "credit_score":
+    if "credit score" in text or (
+        "credit_score" in current_missing_fields and re.fullmatch(r"\d{3}", text)
+    ):
         score_match = re.search(r"\b([3-8]\d{2}|900)\b", text)
 
         if score_match:
             extracted["credit_score"] = int(score_match.group(1))
 
-    if next_field == "age":
+    if "age" in text or "years old" in text or "yrs" in text or (
+        "age" in current_missing_fields and re.fullmatch(r"\d{2}", text)
+    ):
         age_match = re.search(r"\b(1[8-9]|[2-6]\d|7[0-5])\b", text)
 
         if age_match:
             extracted["age"] = int(age_match.group(1))
 
-    if next_field == "tenure_years":
-        tenure_match = re.search(r"\b([1-9]|[1-3]\d|40)\b", text)
+    if "salaried" in text:
+        extracted["employment_type"] = "salaried"
+    elif "self employed" in text or "self-employed" in text or "business" in text:
+        extracted["employment_type"] = "self-employed"
 
-        if tenure_match:
-            extracted["tenure_years"] = int(tenure_match.group(1))
+    if "property_location" in current_missing_fields:
+        location_keywords = ["in ", "located", "location", "city"]
 
-    if next_field == "employment_type":
-        if "salaried" in text:
-            extracted["employment_type"] = "salaried"
-        elif "self employed" in text or "self-employed" in text or "business" in text:
-            extracted["employment_type"] = "self-employed"
+        if any(keyword in text for keyword in location_keywords):
+            extracted["property_location"] = user_message.strip()
 
-    if next_field == "property_location":
-        extracted["property_location"] = user_message.strip()
+        elif len(user_message.strip().split()) <= 4 and not money_value:
+            extracted["property_location"] = user_message.strip()
 
-    if next_field in [
+    yes_no_fields = [
         "pan_available",
         "id_proof_available",
         "address_proof_available",
-    ]:
-        bool_value = normalize_boolean_from_text(text)
+    ]
 
-        if bool_value is not None:
-            extracted[next_field] = bool_value
+    for field in yes_no_fields:
+        if field in current_missing_fields:
+            bool_value = normalize_boolean_from_text(text)
 
-    if next_field == "documents_confirmed":
-        submitted_documents = normalize_documents_from_text(user_message)
+            if bool_value is not None:
+                extracted[field] = bool_value
+                break
 
-        extracted["submitted_documents"] = submitted_documents
-        extracted["documents_confirmed"] = True
+    if "documents_confirmed" in current_missing_fields:
+        submission_keywords = [
+            "submitted",
+            "uploaded",
+            "provided",
+            "attached",
+            "sent",
+            "shared",
+            "given",
+            "i submitted",
+            "i have submitted",
+            "i uploaded",
+            "i have uploaded",
+            "i provided",
+            "i have provided",
+            "documents submitted",
+            "docs submitted",
+            "uploaded documents",
+            "submitted documents",
+            "none submitted",
+            "no documents submitted",
+        ]
+
+        if any(keyword in text for keyword in submission_keywords):
+            extracted["submitted_documents"] = normalize_documents_from_text(
+                user_message
+            )
+            extracted["documents_confirmed"] = True
 
     return extracted
+
+
+@opik.track(
+    name="groq_classify_user_intent",
+    project_name=OPIK_PROJECT_NAME,
+    flush=True,
+)
+def classify_user_intent_with_groq(
+    user_message: str,
+    application: dict[str, Any],
+    missing_fields: list[str],
+) -> dict[str, Any]:
+    llm = get_groq_llm()
+
+    prompt = f"""
+Current application:
+{json.dumps(application, indent=2)}
+
+Missing fields:
+{missing_fields}
+
+User message:
+{user_message}
+
+Return JSON only.
+"""
+
+    response = llm.invoke(
+        [
+            ("system", INTENT_PROMPT),
+            ("human", prompt),
+        ]
+    )
+
+    parsed = clean_json_response(response.content)
+
+    intent = parsed.get("intent", "application_data")
+
+    if intent not in [
+        "general_question",
+        "application_data",
+        "correction",
+        "assessment_request",
+        "resume_request",
+    ]:
+        intent = "application_data"
+
+    return {
+        "intent": intent,
+        "confidence": parsed.get("confidence", 0.5),
+        "reason": parsed.get("reason", ""),
+    }
 
 
 @opik.track(
@@ -486,20 +725,16 @@ def extract_loan_fields_with_groq(
     current_application: dict[str, Any],
     current_missing_fields: list[str],
 ) -> dict[str, Any]:
-    """
-    Use Groq to extract structured loan application fields from natural language.
-    """
-
     llm = get_groq_llm()
 
     prompt = f"""
 Current application state:
 {json.dumps(current_application, indent=2)}
 
-Current missing fields in order:
+Current missing fields:
 {current_missing_fields}
 
-Most likely field being answered:
+Most likely missing field being answered:
 {current_missing_fields[0] if current_missing_fields else "None"}
 
 User message:
@@ -510,7 +745,7 @@ Return JSON only.
 
     response = llm.invoke(
         [
-            ("system", EXTRACTION_SYSTEM_PROMPT),
+            ("system", EXTRACTION_PROMPT),
             ("human", prompt),
         ]
     )
@@ -518,14 +753,11 @@ Return JSON only.
     llm_extracted = clean_json_response(response.content)
     fallback_extracted = fallback_extract(user_message, current_missing_fields)
 
-    # Fallback overrides LLM for the immediate asked field.
-    # This avoids common mistakes for short answers like "85k", "yes", "no", "760".
     extracted = {
         **llm_extracted,
         **fallback_extracted,
     }
 
-    # If submitted_documents came as text/list from LLM, normalize it.
     if "submitted_documents" in extracted:
         extracted["submitted_documents"] = normalize_documents_from_text(
             extracted["submitted_documents"]
@@ -537,3 +769,114 @@ Return JSON only.
         for key, value in extracted.items()
         if key in SUPPORTED_FIELDS
     }
+
+
+@opik.track(
+    name="groq_generate_agent_response",
+    project_name=OPIK_PROJECT_NAME,
+    flush=True,
+)
+def generate_agent_response_with_groq(
+    user_message: str,
+    intent: str,
+    application: dict[str, Any],
+    missing_fields: list[str],
+    validation_errors: list[str],
+    last_extracted_fields: dict[str, Any],
+    assessment_ready: bool,
+    should_continue_application: bool,
+    next_field_to_ask: str | None,
+) -> str:
+    llm = get_groq_llm()
+
+    prompt = f"""
+Intent:
+{intent}
+
+Current application:
+{json.dumps(application, indent=2)}
+
+Missing fields:
+{missing_fields}
+
+Next field to ask:
+{next_field_to_ask}
+
+Validation errors:
+{validation_errors}
+
+Fields extracted from latest user message:
+{json.dumps(last_extracted_fields, indent=2)}
+
+Assessment ready:
+{assessment_ready}
+
+Should continue application flow:
+{should_continue_application}
+
+Latest user message:
+{user_message}
+
+Generate the assistant response.
+
+Important behavior:
+- If intent is general_question and should_continue_application is false:
+  answer the user's home-loan question only.
+  Do NOT ask for income, loan amount, credit score, documents, EMI, or any application detail.
+  You may end with a soft optional line like:
+  "I can also help you check eligibility when you are ready to apply."
+
+- If intent is general_question and should_continue_application is true:
+  answer the question first.
+  Then gently offer to continue the existing application.
+  Do not force the next application question unless the user clearly wants to continue.
+
+- If intent is application_data, correction, or assessment_request:
+  acknowledge only the information that exists in Current application.
+  If fields are missing, ask one natural next question.
+
+
+
+Post-assessment behavior:
+- If assessment is already complete and the user asks a follow-up question, answer it normally.
+- Do not ask application collection questions again unless the user clearly wants to change details.
+- If user asks what to do next, explain the next steps from the assessment result.
+- If user says finish, end, done, or no thanks, the backend will close the conversation.  
+
+Important next-question rule:
+- If should_continue_application is true and assessment_ready is false, ask ONLY for Next field to ask.
+- Do not ask for any field that already exists in Current application.
+- Do not ask for monthly_income if monthly_income already exists.
+- Do not ask for loan_amount if loan_amount already exists.
+- Do not ask for age if age already exists.
+- Do not ask for credit_score if credit_score already exists.
+- Do not ask for existing_emi if existing_emi already exists.
+- Do not choose a different missing field yourself.
+- Use Missing fields only to understand progress.
+- The only field you may ask next is Next field to ask.
+- If Next field to ask is None and assessment_ready is true, tell the user assessment can proceed.
+
+Document rules:
+- Do not claim PAN, ID proof, address proof, or submitted documents are confirmed unless they exist in Current application.
+- "Documents available" and "documents submitted" are different.
+- If documents are only available, ask which documents have been submitted/uploaded only when Next field to ask is documents_confirmed.
+- If Next field to ask is documents_confirmed, ask the user which documents have been submitted/uploaded for this application.
+- Do not say assessment can proceed until documents_confirmed exists in Current application.
+- Availability of PAN/ID/address proof is not enough for assessment. Submitted/uploaded document list is still required.
+
+Style rules:
+- Do not print raw JSON.
+- Do not use a rigid form style.
+- Do not ask for all details at once.
+- Do not approve or reject the loan yourself.
+- Final decision comes only from the tool-based assessment.
+"""
+
+    response = llm.invoke(
+        [
+            ("system", AGENT_RESPONSE_PROMPT),
+            ("human", prompt),
+        ]
+    )
+
+    return response.content.strip()

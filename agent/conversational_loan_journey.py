@@ -1,26 +1,22 @@
 """
-Conversational home loan journey.
+Agent-driven conversational home loan journey.
 
-Flow:
-1. User replies naturally.
-2. Groq extracts structured fields.
-3. Application state is updated.
-4. Agent asks the next missing question.
-5. Document availability and submitted documents are collected conversationally.
-6. Once all required fields are collected, the fixed home-loan assessment runs.
-7. Final result is returned with EMI / DTI / FOIR / LTV / KYC / CIBIL / documents.
-8. Opik traces extraction, state update and calculation.
 """
 
 import os
+import uuid
 from typing import Any, TypedDict
 
 import opik
 from dotenv import load_dotenv
-from langgraph.graph import END, StateGraph
 
 from agent.controlled_assessment import run_controlled_home_loan_assessment
-from agent.llm_extractor import extract_loan_fields_with_groq
+from agent.conversation_store import load_conversation_state, save_conversation_state
+from agent.llm_extractor import (
+    classify_user_intent_with_groq,
+    extract_loan_fields_with_groq,
+    generate_agent_response_with_groq,
+)
 
 
 load_dotenv()
@@ -31,13 +27,14 @@ OPIK_PROJECT_NAME = os.getenv("OPIK_PROJECT_NAME", "home-loan-langgraph")
 class LoanConversationState(TypedDict, total=False):
     thread_id: str
     messages: list[dict[str, str]]
-    latest_user_message: str
     application: dict[str, Any]
     missing_fields: list[str]
     validation_errors: list[str]
     last_extracted_fields: dict[str, Any]
+    last_intent: str
     assessment_result: dict[str, Any] | None
     is_ready_for_assessment: bool
+    conversation_closed: bool
 
 
 REQUIRED_FIELDS = [
@@ -56,89 +53,40 @@ REQUIRED_FIELDS = [
 ]
 
 
-QUESTION_MAP = {
-    "loan_amount": "What loan amount are you looking for?",
-    "monthly_income": "What is your monthly income?",
-    "credit_score": "What is your credit score?",
-    "existing_emi": "How much existing EMI do you currently pay per month?",
-    "age": "What is your age?",
-    "employment_type": "Are you salaried or self-employed?",
-    "property_value": "What is the estimated property value?",
-    "property_location": "Where is the property located?",
-    "pan_available": "Do you have a PAN card available?",
-    "id_proof_available": "Do you have ID proof available?",
-    "address_proof_available": "Do you have address proof available?",
-    "documents_confirmed": (
-        "Please tell me which documents you have already submitted. "
-        "You can also mention anything not submitted. "
-        "For example: 'I submitted PAN card, ID proof and bank statement, "
-        "but I have not submitted builder NOC or approved building plan.' "
-        "If you have not submitted any documents, say none."
-    ),
-}
+def create_thread_id() -> str:
+    return f"loan-thread-{uuid.uuid4().hex[:8]}"
 
 
-DOCUMENT_ALIASES = {
-    "pan": "pan_card",
-    "pan card": "pan_card",
-    "pancard": "pan_card",
-    "id": "id_proof",
-    "id proof": "id_proof",
-    "identity proof": "id_proof",
-    "aadhaar": "id_proof",
-    "aadhar": "id_proof",
-    "passport": "id_proof",
-    "address": "address_proof",
-    "address proof": "address_proof",
-    "utility bill": "address_proof",
-    "electricity bill": "address_proof",
-    "bank statement": "bank_statement",
-    "bank statements": "bank_statement",
-    "property title": "property_title_deed",
-    "property title deed": "property_title_deed",
-    "title deed": "property_title_deed",
-    "sale agreement": "sale_agreement",
-    "salary slip": "salary_slips",
-    "salary slips": "salary_slips",
-    "form 16": "form_16",
-    "form16": "form_16",
-    "employment proof": "employment_proof",
-    "builder noc": "builder_noc",
-    "noc": "builder_noc",
-    "approved building plan": "approved_building_plan",
-    "building plan": "approved_building_plan",
-}
-
-
-CANONICAL_DOCUMENTS = {
-    "pan_card",
-    "id_proof",
-    "address_proof",
-    "bank_statement",
-    "property_title_deed",
-    "sale_agreement",
-    "salary_slips",
-    "form_16",
-    "employment_proof",
-    "builder_noc",
-    "approved_building_plan",
-}
+def create_initial_conversation_state(thread_id: str) -> LoanConversationState:
+    return {
+        "thread_id": thread_id,
+        "messages": [
+            {
+                "role": "assistant",
+                "content": (
+                    "Hi, I can help with home loan questions or start a loan "
+                    "application. You can ask me something like "
+                    "'what documents are required?' or tell me if you want to "
+                    "start a home loan application."
+                ),
+            }
+        ],
+        "application": {},
+        "missing_fields": REQUIRED_FIELDS.copy(),
+        "validation_errors": [],
+        "last_extracted_fields": {},
+        "last_intent": "",
+        "assessment_result": None,
+        "is_ready_for_assessment": False,
+        "conversation_closed": False,
+    }
 
 
 def is_missing(value: Any) -> bool:
-    """
-    Check if a value should be treated as missing.
-
-    Important:
-    False is not missing because user may answer no to document availability.
-    """
-
     return value is None or value == "" or value == []
 
 
 def get_missing_fields(application: dict[str, Any]) -> list[str]:
-    """Return all required fields still missing from application state."""
-
     missing_fields: list[str] = []
 
     for field in REQUIRED_FIELDS:
@@ -158,14 +106,12 @@ def get_missing_fields(application: dict[str, Any]) -> list[str]:
 
 
 def normalize_boolean(value: Any) -> bool | None:
-    """Normalize yes/no answers."""
-
     if isinstance(value, bool):
         return value
 
     text = str(value).lower().strip()
 
-    yes_values = [
+    yes_terms = [
         "yes",
         "y",
         "true",
@@ -175,9 +121,10 @@ def normalize_boolean(value: Any) -> bool | None:
         "uploaded",
         "submitted",
         "present",
+        "with me",
     ]
 
-    no_values = [
+    no_terms = [
         "no",
         "n",
         "false",
@@ -188,136 +135,27 @@ def normalize_boolean(value: Any) -> bool | None:
         "do not have",
         "not uploaded",
         "not submitted",
+        "not with me",
     ]
 
-    if text in yes_values:
+    if text in yes_terms:
         return True
 
-    if text in no_values:
+    if text in no_terms:
         return False
 
-    if any(term in text for term in yes_values):
+    if any(term in text for term in yes_terms):
         return True
 
-    if any(term in text for term in no_values):
+    if any(term in text for term in no_terms):
         return False
 
     return None
 
 
-def extract_document_names(raw_text: str) -> list[str]:
-    """Extract all document names mentioned in text."""
-
-    documents: list[str] = []
-
-    for phrase, canonical_name in DOCUMENT_ALIASES.items():
-        if phrase in raw_text and canonical_name not in documents:
-            documents.append(canonical_name)
-
-    for canonical_name in CANONICAL_DOCUMENTS:
-        if canonical_name in raw_text and canonical_name not in documents:
-            documents.append(canonical_name)
-
-    return documents
-
-
-def extract_negative_documents(raw_text: str) -> list[str]:
-    """
-    Extract documents that user says are not submitted.
-
-    Example:
-    'I submitted PAN card, but I have not submitted builder NOC'
-    -> ['builder_noc']
-    """
-
-    negative_markers = [
-        "i have not submitted",
-        "i haven't submitted",
-        "i havent submitted",
-        "have not submitted",
-        "haven't submitted",
-        "havent submitted",
-        "not submitted",
-        "not uploaded",
-        "missing",
-        "dont have",
-        "don't have",
-        "do not have",
-    ]
-
-    negative_parts: list[str] = []
-
-    for marker in negative_markers:
-        if marker in raw_text:
-            after_marker = raw_text.split(marker, 1)[1]
-
-            stop_markers = [
-                " but i submitted",
-                " but submitted",
-                " but i have submitted",
-                ".",
-                ";",
-            ]
-
-            for stop_marker in stop_markers:
-                if stop_marker in after_marker:
-                    after_marker = after_marker.split(stop_marker, 1)[0]
-
-            negative_parts.append(after_marker)
-
-    if not negative_parts:
-        return []
-
-    return extract_document_names(" ".join(negative_parts))
-
-
-def normalize_documents(value: Any) -> list[str]:
-    """
-    Normalize document names into canonical document keys.
-
-    If user mentions both submitted and not submitted documents,
-    only submitted documents are kept.
-    """
-
-    if value is None:
-        return []
-
-    if isinstance(value, list):
-        raw_text = " ".join(str(item).lower().strip() for item in value)
-    else:
-        raw_text = str(value).lower().strip()
-
-    no_document_phrases = [
-        "none",
-        "nothing",
-        "no documents",
-        "no docs",
-        "i have not submitted any documents",
-        "i havent submitted any documents",
-        "haven't submitted any documents",
-        "not submitted any documents",
-    ]
-
-    if raw_text in no_document_phrases:
-        return []
-
-    all_mentioned_documents = extract_document_names(raw_text)
-    negative_documents = extract_negative_documents(raw_text)
-
-    submitted_documents = [
-        document
-        for document in all_mentioned_documents
-        if document not in negative_documents
-    ]
-
-    return submitted_documents
-
-
 def validate_and_normalize_fields(
     extracted: dict[str, Any],
 ) -> tuple[dict[str, Any], list[str]]:
-    """Validate and normalize fields extracted by Groq."""
-
     valid: dict[str, Any] = {}
     errors: list[str] = []
 
@@ -364,7 +202,7 @@ def validate_and_normalize_fields(
 
                 valid[field] = text
 
-            elif field == "property_location":
+            elif field in ["property_location", "name", "property_type"]:
                 valid[field] = str(value).strip()
 
             elif field in [
@@ -381,7 +219,15 @@ def validate_and_normalize_fields(
                 valid[field] = bool_value
 
             elif field == "submitted_documents":
-                valid["submitted_documents"] = normalize_documents(value)
+                if isinstance(value, list):
+                    valid["submitted_documents"] = [
+                        str(document).strip()
+                        for document in value
+                        if str(document).strip()
+                    ]
+                else:
+                    valid["submitted_documents"] = []
+
                 valid["documents_confirmed"] = True
 
             elif field == "documents_confirmed":
@@ -404,110 +250,7 @@ def validate_and_normalize_fields(
     return valid, errors
 
 
-@opik.track(
-    name="conversational_extract_and_update_state",
-    project_name=OPIK_PROJECT_NAME,
-    flush=True,
-)
-def extract_and_update_state(state: LoanConversationState) -> LoanConversationState:
-    """
-    Extract user answer using Groq, validate it, and update application state.
-    """
-
-    messages = state.get("messages", [])
-    application = state.get("application", {})
-    latest_user_message = state.get("latest_user_message", "")
-
-    messages.append(
-        {
-            "role": "user",
-            "content": latest_user_message,
-        }
-    )
-
-    current_missing = get_missing_fields(application)
-
-    extracted = extract_loan_fields_with_groq(
-        user_message=latest_user_message,
-        current_application=application,
-        current_missing_fields=current_missing,
-    )
-
-    valid_fields, validation_errors = validate_and_normalize_fields(extracted)
-
-    application.update(valid_fields)
-
-    missing_fields = get_missing_fields(application)
-
-    return {
-        **state,
-        "messages": messages,
-        "application": application,
-        "missing_fields": missing_fields,
-        "validation_errors": validation_errors,
-        "last_extracted_fields": valid_fields,
-        "is_ready_for_assessment": len(missing_fields) == 0,
-    }
-
-
-def decide_next_step(state: LoanConversationState) -> LoanConversationState:
-    """Decide if the agent should ask another question or run calculation."""
-
-    application = state.get("application", {})
-    missing_fields = get_missing_fields(application)
-
-    return {
-        **state,
-        "missing_fields": missing_fields,
-        "is_ready_for_assessment": len(missing_fields) == 0,
-    }
-
-
-def ask_next_question(state: LoanConversationState) -> LoanConversationState:
-    """Ask the next missing question."""
-
-    messages = state.get("messages", [])
-    missing_fields = state.get("missing_fields", [])
-    validation_errors = state.get("validation_errors", [])
-    last_extracted_fields = state.get("last_extracted_fields", {})
-
-    if not missing_fields:
-        assistant_message = (
-            "Thanks. I have enough information now. I will calculate affordability."
-        )
-    else:
-        if validation_errors:
-            prefix = "I could not validate that answer. " + " ".join(validation_errors)
-        elif not last_extracted_fields:
-            prefix = "I could not clearly capture that detail."
-        else:
-            prefix = "Got it."
-
-        next_field = missing_fields[0]
-        question = QUESTION_MAP.get(next_field, f"Please provide {next_field}.")
-        assistant_message = f"{prefix} {question}"
-
-    messages.append(
-        {
-            "role": "assistant",
-            "content": assistant_message,
-        }
-    )
-
-    return {
-        **state,
-        "messages": messages,
-    }
-
-
 def build_application_for_assessment(application: dict[str, Any]) -> dict[str, Any]:
-    """
-    Build the full application payload expected by the existing assessment flow.
-
-    Document fields are not defaulted to uploaded.
-    They come from the conversation.
-    """
-
     return {
         "name": application.get("name", "Conversational Applicant"),
         "age": int(application["age"]),
@@ -534,22 +277,7 @@ def build_application_for_assessment(application: dict[str, Any]) -> dict[str, A
     }
 
 
-@opik.track(
-    name="conversational_home_loan_calculation",
-    project_name=OPIK_PROJECT_NAME,
-    flush=True,
-)
-def run_assessment(state: LoanConversationState) -> LoanConversationState:
-    """
-    Run final home-loan assessment after all required fields are collected.
-    """
-
-    messages = state.get("messages", [])
-    application = state.get("application", {})
-
-    final_application = build_application_for_assessment(application)
-    result = run_controlled_home_loan_assessment(final_application)
-
+def format_assessment_message(result: dict[str, Any]) -> str:
     assessment = result["assessment"]
     financial = result["financial_metrics"]
     documents = result["documents"]
@@ -563,11 +291,14 @@ def run_assessment(state: LoanConversationState) -> LoanConversationState:
     missing_documents = documents.get("missing_documents", [])
 
     if missing_documents:
-        missing_docs_text = ", ".join(missing_documents)
+        missing_docs_text = ", ".join(
+            str(doc).replace("_", " ").title()
+            for doc in missing_documents
+        )
     else:
         missing_docs_text = "None"
 
-    assistant_message = (
+    return (
         "I have completed the initial home loan assessment using affordability, "
         "credit, KYC and document checks.\n\n"
         f"Result: {decision_label}\n"
@@ -580,13 +311,266 @@ def run_assessment(state: LoanConversationState) -> LoanConversationState:
         f"CIBIL status: {cibil['cibil_status']}\n"
         f"Document status: {document_status}\n"
         f"Missing documents: {missing_docs_text}\n\n"
-        "This is an initial eligibility assessment only, not a final loan sanction."
+        "This is an initial eligibility assessment only, not a final loan sanction.\n\n"
+        "Would you like to ask anything else about this result, or should I finish this conversation?"
     )
+
+
+def has_application_started(application: dict[str, Any]) -> bool:
+    application_start_fields = [
+        "loan_amount",
+        "monthly_income",
+        "credit_score",
+        "existing_emi",
+        "age",
+        "employment_type",
+        "property_value",
+        "property_location",
+        "pan_available",
+        "id_proof_available",
+        "address_proof_available",
+        "submitted_documents",
+        "documents_confirmed",
+    ]
+
+    return any(field in application for field in application_start_fields)
+
+
+def should_extract_for_intent(intent: str) -> bool:
+    return intent in [
+        "application_data",
+        "correction",
+        "assessment_request",
+    ]
+
+
+def should_run_assessment(
+    intent: str,
+    assessment_ready: bool,
+    assessment_already_done: bool,
+) -> bool:
+    if assessment_already_done:
+        return False
+
+    return assessment_ready and intent in [
+        "application_data",
+        "correction",
+        "assessment_request",
+    ]
+
+
+def user_explicitly_mentions_document_availability(
+    user_message: str,
+    field: str,
+) -> bool:
+    text = user_message.lower()
+
+    field_keywords = {
+        "pan_available": ["pan", "pan card", "pancard"],
+        "id_proof_available": [
+            "id proof",
+            "identity proof",
+            "aadhaar",
+            "aadhar",
+            "passport",
+            "voter id",
+            "id",
+        ],
+        "address_proof_available": [
+            "address proof",
+            "utility bill",
+            "electricity bill",
+            "aadhaar",
+            "aadhar",
+            "passport",
+            "voter id",
+            "address",
+        ],
+    }
+
+    availability_keywords = [
+        "yes",
+        "no",
+        "have",
+        "don't have",
+        "dont have",
+        "do not have",
+        "available",
+        "not available",
+        "missing",
+        "with me",
+        "not with me",
+    ]
+
+    doc_keywords = field_keywords.get(field, [])
+
+    return any(keyword in text for keyword in doc_keywords) and any(
+        keyword in text for keyword in availability_keywords
+    )
+
+
+def user_explicitly_mentions_document_submission(user_message: str) -> bool:
+    text = user_message.lower().strip()
+
+    submission_keywords = [
+        "submitted",
+        "uploaded",
+        "provided",
+        "attached",
+        "sent",
+        "shared",
+        "given",
+        "i submitted",
+        "i have submitted",
+        "i uploaded",
+        "i have uploaded",
+        "i provided",
+        "i have provided",
+        "documents submitted",
+        "docs submitted",
+        "uploaded documents",
+        "submitted documents",
+        "none submitted",
+        "no documents submitted",
+    ]
+
+    return any(keyword in text for keyword in submission_keywords)
+
+
+def apply_contextual_document_availability(
+    user_message: str,
+    extracted: dict[str, Any],
+    missing_fields_before: list[str],
+) -> dict[str, Any]:
+    text = user_message.lower().strip()
+
+    current_expected_field = (
+        missing_fields_before[0] if missing_fields_before else None
+    )
+
+    positive_phrases = [
+        "yes",
+        "yea",
+        "yeah",
+        "yep",
+        "i have",
+        "have that",
+        "i have that",
+        "available",
+        "with me",
+        "i have all",
+        "all available",
+        "all the documents",
+        "all documents",
+        "all docs",
+    ]
+
+    negative_phrases = [
+        "no",
+        "not available",
+        "don't have",
+        "dont have",
+        "do not have",
+        "missing",
+        "not with me",
+    ]
+
+    is_positive = any(phrase in text for phrase in positive_phrases)
+    is_negative = any(phrase in text for phrase in negative_phrases)
+
+    if is_positive and (
+        "all documents" in text
+        or "all the documents" in text
+        or "all available" in text
+        or "all docs" in text
+    ):
+        extracted["pan_available"] = True
+        extracted["id_proof_available"] = True
+        extracted["address_proof_available"] = True
+        return extracted
+
+    if current_expected_field in [
+        "pan_available",
+        "id_proof_available",
+        "address_proof_available",
+    ]:
+        if is_positive:
+            extracted[current_expected_field] = True
+        elif is_negative:
+            extracted[current_expected_field] = False
+
+    if is_positive:
+        if "pan" in text or "pan card" in text or "pancard" in text:
+            extracted["pan_available"] = True
+
+        if (
+            "id proof" in text
+            or "identity proof" in text
+            or "passport" in text
+            or "voter id" in text
+            or "aadhaar" in text
+            or "aadhar" in text
+        ):
+            extracted["id_proof_available"] = True
+
+        if (
+            "address proof" in text
+            or "utility bill" in text
+            or "electricity bill" in text
+            or (
+                current_expected_field == "address_proof_available"
+                and (
+                    "passport" in text
+                    or "voter id" in text
+                    or "aadhaar" in text
+                    or "aadhar" in text
+                    or "i have that" in text
+                    or "have that" in text
+                    or "yes" in text
+                )
+            )
+        ):
+            extracted["address_proof_available"] = True
+
+    return extracted
+
+
+def is_finish_conversation_message(user_message: str) -> bool:
+    text = user_message.lower().strip()
+
+    finish_phrases = [
+        "finish",
+        "end",
+        "close",
+        "stop",
+        "done",
+        "no thanks",
+        "no thank you",
+        "that's all",
+        "thats all",
+        "nothing else",
+        "no more questions",
+    ]
+
+    return any(phrase in text for phrase in finish_phrases)
+
+
+@opik.track(
+    name="agent_driven_home_loan_calculation",
+    project_name=OPIK_PROJECT_NAME,
+    flush=True,
+)
+def run_assessment_for_state(state: LoanConversationState) -> LoanConversationState:
+    application = state.get("application", {})
+    messages = state.get("messages", [])
+
+    final_application = build_application_for_assessment(application)
+    result = run_controlled_home_loan_assessment(final_application)
 
     messages.append(
         {
             "role": "assistant",
-            "content": assistant_message,
+            "content": format_assessment_message(result),
         }
     )
 
@@ -595,49 +579,250 @@ def run_assessment(state: LoanConversationState) -> LoanConversationState:
         "messages": messages,
         "application": final_application,
         "assessment_result": result,
-        "is_ready_for_assessment": True,
         "missing_fields": [],
+        "is_ready_for_assessment": True,
+        "conversation_closed": False,
     }
 
 
-def route_after_decision(state: LoanConversationState) -> str:
-    """Route to assessment if all required fields are present."""
+@opik.track(
+    name="agent_driven_conversational_turn",
+    project_name=OPIK_PROJECT_NAME,
+    flush=True,
+)
+def run_conversational_loan_turn(
+    thread_id: str,
+    user_message: str,
+) -> dict[str, Any]:
+    saved_state = load_conversation_state(thread_id)
 
-    missing_fields = state.get("missing_fields", [])
+    if saved_state:
+        state: LoanConversationState = saved_state
+    else:
+        state = create_initial_conversation_state(thread_id)
 
-    if len(missing_fields) == 0:
-        return "run_assessment"
+    messages = state.get("messages", [])
+    application = state.get("application", {})
 
-    return "ask_next_question"
-
-
-def build_conversational_loan_graph():
-    """Build the LangGraph conversational home loan journey."""
-
-    graph = StateGraph(LoanConversationState)
-
-    graph.add_node("extract_and_update_state", extract_and_update_state)
-    graph.add_node("decide_next_step", decide_next_step)
-    graph.add_node("ask_next_question", ask_next_question)
-    graph.add_node("run_assessment", run_assessment)
-
-    graph.set_entry_point("extract_and_update_state")
-
-    graph.add_edge("extract_and_update_state", "decide_next_step")
-
-    graph.add_conditional_edges(
-        "decide_next_step",
-        route_after_decision,
+    messages.append(
         {
-            "ask_next_question": "ask_next_question",
-            "run_assessment": "run_assessment",
-        },
+            "role": "user",
+            "content": user_message,
+        }
     )
 
-    graph.add_edge("ask_next_question", END)
-    graph.add_edge("run_assessment", END)
+    if state.get("assessment_result") is not None and is_finish_conversation_message(
+        user_message
+    ):
+        messages.append(
+            {
+                "role": "assistant",
+                "content": (
+                    "Got it. I’ll close this home loan conversation now. "
+                    "You can start a new application or resume another Application ID from the sidebar."
+                ),
+            }
+        )
 
-    return graph.compile()
+        state = {
+            **state,
+            "messages": messages,
+            "conversation_closed": True,
+        }
+
+        save_conversation_state(thread_id, state)
+
+        return {
+            "thread_id": thread_id,
+            "assistant_message": messages[-1]["content"],
+            "messages": state.get("messages", []),
+            "application": state.get("application", {}),
+            "missing_fields": state.get("missing_fields", []),
+            "assessment_result": state.get("assessment_result"),
+            "is_ready_for_assessment": state.get("is_ready_for_assessment", False),
+            "state": state,
+        }
+
+    missing_fields_before = get_missing_fields(application)
+
+    intent_result = classify_user_intent_with_groq(
+        user_message=user_message,
+        application=application,
+        missing_fields=missing_fields_before,
+    )
+
+    intent = intent_result.get("intent", "application_data")
+    assessment_already_done = state.get("assessment_result") is not None
+
+    if assessment_already_done and intent not in ["correction", "application_data"]:
+        intent = "general_question"
+
+    extracted: dict[str, Any] = {}
+    validation_errors: list[str] = []
+
+    if should_extract_for_intent(intent) and not assessment_already_done:
+        extracted_raw = extract_loan_fields_with_groq(
+            user_message=user_message,
+            current_application=application,
+            current_missing_fields=missing_fields_before,
+        )
+
+        extracted, validation_errors = validate_and_normalize_fields(extracted_raw)
+
+        extracted = apply_contextual_document_availability(
+            user_message=user_message,
+            extracted=extracted,
+            missing_fields_before=missing_fields_before,
+        )
+
+        document_availability_fields = [
+            "pan_available",
+            "id_proof_available",
+            "address_proof_available",
+        ]
+
+        for field in document_availability_fields:
+            if field in extracted:
+                explicitly_mentioned = user_explicitly_mentions_document_availability(
+                    user_message=user_message,
+                    field=field,
+                )
+
+                text = user_message.lower().strip()
+
+                current_expected_field = (
+                    missing_fields_before[0] if missing_fields_before else None
+                )
+
+                contextual_positive_answer = any(
+                    phrase in text
+                    for phrase in [
+                        "yes",
+                        "yea",
+                        "yeah",
+                        "yep",
+                        "i have",
+                        "have that",
+                        "i have that",
+                        "available",
+                        "with me",
+                    ]
+                )
+
+                all_documents_answer = any(
+                    phrase in text
+                    for phrase in [
+                        "all documents",
+                        "all the documents",
+                        "all docs",
+                        "all available",
+                    ]
+                )
+
+                allow_contextual_answer = (
+                    contextual_positive_answer and current_expected_field == field
+                )
+
+                allow_all_documents_answer = all_documents_answer and field in [
+                    "pan_available",
+                    "id_proof_available",
+                    "address_proof_available",
+                ]
+
+                if not (
+                    explicitly_mentioned
+                    or allow_contextual_answer
+                    or allow_all_documents_answer
+                ):
+                    extracted.pop(field, None)
+
+        if "submitted_documents" in extracted or "documents_confirmed" in extracted:
+            if not user_explicitly_mentions_document_submission(user_message):
+                extracted.pop("submitted_documents", None)
+                extracted.pop("documents_confirmed", None)
+
+        application.update(extracted)
+
+    missing_fields_after = get_missing_fields(application)
+    assessment_ready = len(missing_fields_after) == 0
+    application_started = has_application_started(application)
+
+    state = {
+        **state,
+        "messages": messages,
+        "application": application,
+        "missing_fields": missing_fields_after,
+        "validation_errors": validation_errors,
+        "last_extracted_fields": extracted,
+        "last_intent": intent,
+        "is_ready_for_assessment": assessment_ready,
+        "conversation_closed": state.get("conversation_closed", False),
+    }
+
+    assessment_already_done = state.get("assessment_result") is not None
+
+    if should_run_assessment(
+        intent=intent,
+        assessment_ready=assessment_ready,
+        assessment_already_done=assessment_already_done,
+    ):
+        state = run_assessment_for_state(state)
+
+    else:
+        should_continue_application = (
+            intent in ["application_data", "correction", "assessment_request"]
+            or application_started
+        )
+
+        if intent == "general_question" and not application_started:
+            should_continue_application = False
+
+        if assessment_already_done:
+            should_continue_application = False
+
+        next_field_to_ask = missing_fields_after[0] if missing_fields_after else None
+
+        if assessment_already_done:
+            next_field_to_ask = None
+
+        assistant_message = generate_agent_response_with_groq(
+            user_message=user_message,
+            intent=intent,
+            application=application,
+            missing_fields=missing_fields_after,
+            validation_errors=validation_errors,
+            last_extracted_fields=extracted,
+            assessment_ready=assessment_ready,
+            should_continue_application=should_continue_application,
+            next_field_to_ask=next_field_to_ask,
+        )
+
+        state["messages"].append(
+            {
+                "role": "assistant",
+                "content": assistant_message,
+            }
+        )
+
+    save_conversation_state(thread_id, state)
+
+    latest_assistant_message = ""
+
+    for message in reversed(state.get("messages", [])):
+        if message.get("role") == "assistant":
+            latest_assistant_message = message.get("content", "")
+            break
+
+    return {
+        "thread_id": thread_id,
+        "assistant_message": latest_assistant_message,
+        "messages": state.get("messages", []),
+        "application": state.get("application", {}),
+        "missing_fields": state.get("missing_fields", []),
+        "assessment_result": state.get("assessment_result"),
+        "is_ready_for_assessment": state.get("is_ready_for_assessment", False),
+        "state": state,
+    }
 
 
 
