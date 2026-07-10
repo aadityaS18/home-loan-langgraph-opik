@@ -19,4 +19,9 @@ venv/
 .DS_Store
 
 # Anaconda/cache
-.ipynb_checkpoints/
+.ipynb_checkpoints/data/
+evals/results/
+__pycache__/
+*.pyc
+.env
+*_backup.py
