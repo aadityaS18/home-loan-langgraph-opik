@@ -1,0 +1,24 @@
+{
+  "thread_id": "eval-general_documents_question-1611c317",
+  "messages": [
+    {
+      "role": "assistant",
+      "content": "Hi, I can help with home loan questions or start a loan application. You can ask me something like 'what documents are required?' or tell me if you want to start a home loan application."
+    },
+    {
+      "role": "user",
+      "content": "What documents are required for a home loan?"
+    },
+    {
+      "role": "assistant",
+      "content": "Common documents required for a home loan usually include PAN card, ID proof, address proof, recent bank statements, income proof such as salary slips or Form 16, employment proof, and property documents such as property title deed, sale agreement, builder NOC, and approved building plan. The exact list can vary by lender and applicant type."
+    }
+  ],
+  "application": {},
+  "missing_fields": [],
+  "assessment_result": null,
+  "is_ready_for_assessment": false,
+  "conversation_closed": false,
+  "last_agent_action": "direct_response",
+  "tool_trace": []
+}

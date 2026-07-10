@@ -1,0 +1,467 @@
+{
+  "thread_id": "eval-weak_applicant_rejected-ef6175be",
+  "messages": [
+    {
+      "role": "assistant",
+      "content": "Hi, I can help with home loan questions or start a loan application. You can ask me something like 'what documents are required?' or tell me if you want to start a home loan application."
+    },
+    {
+      "role": "user",
+      "content": "I want to apply for a home loan of 90 lakhs. My monthly income is 1.2 lakhs, my credit score is 640, I currently pay 35000 EMI, I am 45 years old, I am self-employed, and the property value is 1 crore in Mumbai."
+    },
+    {
+      "role": "assistant",
+      "content": "What documents have you submitted or uploaded for the loan application?"
+    },
+    {
+      "role": "user",
+      "content": "I have PAN card available, ID proof available, and address proof available."
+    },
+    {
+      "role": "assistant",
+      "content": "Which documents have been submitted or uploaded for the loan application?"
+    },
+    {
+      "role": "user",
+      "content": "I have submitted PAN card, ID proof, address proof and bank statement."
+    },
+    {
+      "role": "assistant",
+      "content": "I have completed the initial home loan assessment using affordability, credit, KYC and document checks.\n\nResult: Rejected\nRisk level: High\nEstimated EMI: ₹78,104.09\nDTI ratio: 94.25%\nFOIR ratio: 94.25%\nLTV ratio: 90.0%\nKYC status: verified\nCIBIL status: high_risk\nDocument status: Incomplete\nMissing documents: Property Title Deed, Sale Agreement, Itr Returns, Business Proof, Profit Loss Statement, Builder Noc, Approved Building Plan\n\nThis is an initial eligibility assessment only, not a final loan sanction.\n\nYou can ask me anything about this result, or type 'finish' to close the conversation."
+    }
+  ],
+  "application": {
+    "name": "Conversational Applicant",
+    "age": 45,
+    "employment_type": "self-employed",
+    "monthly_income": 120000.0,
+    "work_experience_years": 5.0,
+    "credit_score": 640,
+    "existing_emi": 35000.0,
+    "loan_amount": 9000000.0,
+    "interest_rate": 8.5,
+    "tenure_years": 20,
+    "loan_purpose": "purchase",
+    "property_value": 10000000.0,
+    "property_type": "apartment",
+    "property_location": "Mumbai",
+    "property_age": 3,
+    "construction_status": "ready_to_move",
+    "legal_clearance_status": "clear",
+    "valuation_status": "clear",
+    "pan_available": true,
+    "id_proof_available": true,
+    "address_proof_available": true,
+    "submitted_documents": [
+      "pan_card",
+      "id_proof",
+      "address_proof",
+      "bank_statement"
+    ]
+  },
+  "missing_fields": [],
+  "assessment_result": {
+    "application": {
+      "name": "Conversational Applicant",
+      "age": 45,
+      "employment_type": "self-employed",
+      "monthly_income": 120000.0,
+      "work_experience_years": 5.0,
+      "credit_score": 640,
+      "existing_emi": 35000.0,
+      "loan_amount": 9000000.0,
+      "interest_rate": 8.5,
+      "tenure_years": 20,
+      "loan_purpose": "purchase",
+      "property_value": 10000000.0,
+      "property_type": "apartment",
+      "property_location": "Mumbai",
+      "property_age": 3,
+      "construction_status": "ready_to_move",
+      "legal_clearance_status": "clear",
+      "valuation_status": "clear",
+      "pan_available": true,
+      "id_proof_available": true,
+      "address_proof_available": true,
+      "submitted_documents": [
+        "pan_card",
+        "id_proof",
+        "address_proof",
+        "bank_statement"
+      ]
+    },
+    "kyc": {
+      "kyc_status": "verified",
+      "verified": true,
+      "missing_items": [],
+      "reason": "Mock KYC check passed."
+    },
+    "cibil": {
+      "cibil_status": "high_risk",
+      "score": 640,
+      "risk_band": "high",
+      "reason": "Credit score is below the acceptable prototype threshold."
+    },
+    "financial_metrics": {
+      "proposed_emi": 78104.09,
+      "ltv_ratio": 90.0,
+      "dti_ratio": 94.25,
+      "foir_ratio": 94.25,
+      "max_affordable_new_emi": 19000,
+      "max_eligible_loan": 2189385.96,
+      "loan_amount_gap": 6810614.04
+    },
+    "documents": {
+      "required_documents": [
+        "id_proof",
+        "address_proof",
+        "pan_card",
+        "bank_statement",
+        "property_title_deed",
+        "sale_agreement",
+        "itr_returns",
+        "business_proof",
+        "profit_loss_statement",
+        "builder_noc",
+        "approved_building_plan"
+      ],
+      "submitted_documents": [
+        "pan_card",
+        "id_proof",
+        "address_proof",
+        "bank_statement"
+      ],
+      "missing_documents": [
+        "property_title_deed",
+        "sale_agreement",
+        "itr_returns",
+        "business_proof",
+        "profit_loss_statement",
+        "builder_noc",
+        "approved_building_plan"
+      ],
+      "document_status": "incomplete"
+    },
+    "assessment": {
+      "decision": "rejected",
+      "risk_level": "high",
+      "decision_reasons": [
+        "Credit score is below the acceptable prototype threshold of 650.",
+        "Debt-to-income ratio is above the prototype limit of 55%.",
+        "Required documents are missing: property_title_deed, sale_agreement, itr_returns, business_proof, profit_loss_statement, builder_noc, approved_building_plan."
+      ],
+      "risk_flags": [
+        "Credit score is below the acceptable prototype threshold of 650.",
+        "Debt-to-income ratio is above the prototype limit of 55%.",
+        "Requested loan amount is above the estimated eligible loan amount of 2189385.96.",
+        "Required documents are missing: property_title_deed, sale_agreement, itr_returns, business_proof, profit_loss_statement, builder_noc, approved_building_plan."
+      ],
+      "positive_factors": [
+        "Applicant meets the minimum age requirement.",
+        "Monthly income meets the minimum prototype requirement.",
+        "LTV ratio of 90.0% is within the prototype acceptable range.",
+        "Property legal clearance is marked as clear.",
+        "Property valuation status is marked as clear."
+      ],
+      "recommended_actions": [
+        "Improve credit profile before submitting a new application.",
+        "Reduce existing obligations or request a lower loan amount.",
+        "Consider reducing the requested loan amount by approximately 6810614.04.",
+        "Submit the missing documents: property_title_deed, sale_agreement, itr_returns, business_proof, profit_loss_statement, builder_noc, approved_building_plan."
+      ],
+      "underwriting_status": "rejected"
+    }
+  },
+  "is_ready_for_assessment": true,
+  "conversation_closed": false,
+  "last_agent_action": "run_home_loan_assessment_tool",
+  "tool_trace": [
+    {
+      "action": "update_application_state_tool",
+      "tool_args": {
+        "extracted_fields": {
+          "loan_amount": 9000000,
+          "monthly_income": 120000,
+          "credit_score": 640,
+          "existing_emi": 35000,
+          "age": 45,
+          "employment_type": "self-employed",
+          "property_value": 10000000,
+          "property_location": "Mumbai"
+        }
+      },
+      "tool_result": {
+        "tool_name": "update_application_state_tool",
+        "application": {
+          "loan_amount": 9000000,
+          "monthly_income": 120000,
+          "credit_score": 640,
+          "existing_emi": 35000,
+          "age": 45,
+          "employment_type": "self-employed",
+          "property_value": 10000000,
+          "property_location": "Mumbai"
+        },
+        "updated_fields": {
+          "loan_amount": 9000000,
+          "monthly_income": 120000,
+          "credit_score": 640,
+          "existing_emi": 35000,
+          "age": 45,
+          "employment_type": "self-employed",
+          "property_value": 10000000,
+          "property_location": "Mumbai"
+        },
+        "ready_for_assessment": false,
+        "missing_fields": [
+          "pan_available",
+          "id_proof_available",
+          "address_proof_available",
+          "documents_confirmed"
+        ]
+      }
+    },
+    {
+      "action": "update_application_state_tool",
+      "tool_args": {
+        "extracted_fields": {
+          "pan_available": true,
+          "id_proof_available": true,
+          "address_proof_available": true
+        }
+      },
+      "tool_result": {
+        "tool_name": "update_application_state_tool",
+        "application": {
+          "loan_amount": 9000000,
+          "monthly_income": 120000,
+          "credit_score": 640,
+          "existing_emi": 35000,
+          "age": 45,
+          "employment_type": "self-employed",
+          "property_value": 10000000,
+          "property_location": "Mumbai",
+          "pan_available": true,
+          "id_proof_available": true,
+          "address_proof_available": true
+        },
+        "updated_fields": {
+          "pan_available": true,
+          "id_proof_available": true,
+          "address_proof_available": true
+        },
+        "ready_for_assessment": false,
+        "missing_fields": [
+          "documents_confirmed"
+        ]
+      }
+    },
+    {
+      "action": "update_application_state_tool",
+      "tool_args": {
+        "extracted_fields": {
+          "submitted_documents": [
+            "pan_card",
+            "id_proof",
+            "address_proof",
+            "bank_statement"
+          ],
+          "documents_confirmed": true
+        }
+      },
+      "tool_result": {
+        "tool_name": "update_application_state_tool",
+        "application": {
+          "loan_amount": 9000000,
+          "monthly_income": 120000,
+          "credit_score": 640,
+          "existing_emi": 35000,
+          "age": 45,
+          "employment_type": "self-employed",
+          "property_value": 10000000,
+          "property_location": "Mumbai",
+          "pan_available": true,
+          "id_proof_available": true,
+          "address_proof_available": true,
+          "submitted_documents": [
+            "pan_card",
+            "id_proof",
+            "address_proof",
+            "bank_statement"
+          ],
+          "documents_confirmed": true
+        },
+        "updated_fields": {
+          "submitted_documents": [
+            "pan_card",
+            "id_proof",
+            "address_proof",
+            "bank_statement"
+          ],
+          "documents_confirmed": true
+        },
+        "ready_for_assessment": true,
+        "missing_fields": []
+      }
+    },
+    {
+      "action": "check_application_readiness_tool",
+      "tool_args": {},
+      "tool_result": {
+        "tool_name": "check_application_readiness_tool",
+        "ready_for_assessment": true,
+        "missing_fields": []
+      }
+    },
+    {
+      "action": "run_home_loan_assessment_tool",
+      "tool_args": {},
+      "tool_result": {
+        "tool_name": "run_home_loan_assessment_tool",
+        "assessment_ran": true,
+        "application": {
+          "name": "Conversational Applicant",
+          "age": 45,
+          "employment_type": "self-employed",
+          "monthly_income": 120000.0,
+          "work_experience_years": 5.0,
+          "credit_score": 640,
+          "existing_emi": 35000.0,
+          "loan_amount": 9000000.0,
+          "interest_rate": 8.5,
+          "tenure_years": 20,
+          "loan_purpose": "purchase",
+          "property_value": 10000000.0,
+          "property_type": "apartment",
+          "property_location": "Mumbai",
+          "property_age": 3,
+          "construction_status": "ready_to_move",
+          "legal_clearance_status": "clear",
+          "valuation_status": "clear",
+          "pan_available": true,
+          "id_proof_available": true,
+          "address_proof_available": true,
+          "submitted_documents": [
+            "pan_card",
+            "id_proof",
+            "address_proof",
+            "bank_statement"
+          ]
+        },
+        "assessment_result": {
+          "application": {
+            "name": "Conversational Applicant",
+            "age": 45,
+            "employment_type": "self-employed",
+            "monthly_income": 120000.0,
+            "work_experience_years": 5.0,
+            "credit_score": 640,
+            "existing_emi": 35000.0,
+            "loan_amount": 9000000.0,
+            "interest_rate": 8.5,
+            "tenure_years": 20,
+            "loan_purpose": "purchase",
+            "property_value": 10000000.0,
+            "property_type": "apartment",
+            "property_location": "Mumbai",
+            "property_age": 3,
+            "construction_status": "ready_to_move",
+            "legal_clearance_status": "clear",
+            "valuation_status": "clear",
+            "pan_available": true,
+            "id_proof_available": true,
+            "address_proof_available": true,
+            "submitted_documents": [
+              "pan_card",
+              "id_proof",
+              "address_proof",
+              "bank_statement"
+            ]
+          },
+          "kyc": {
+            "kyc_status": "verified",
+            "verified": true,
+            "missing_items": [],
+            "reason": "Mock KYC check passed."
+          },
+          "cibil": {
+            "cibil_status": "high_risk",
+            "score": 640,
+            "risk_band": "high",
+            "reason": "Credit score is below the acceptable prototype threshold."
+          },
+          "financial_metrics": {
+            "proposed_emi": 78104.09,
+            "ltv_ratio": 90.0,
+            "dti_ratio": 94.25,
+            "foir_ratio": 94.25,
+            "max_affordable_new_emi": 19000,
+            "max_eligible_loan": 2189385.96,
+            "loan_amount_gap": 6810614.04
+          },
+          "documents": {
+            "required_documents": [
+              "id_proof",
+              "address_proof",
+              "pan_card",
+              "bank_statement",
+              "property_title_deed",
+              "sale_agreement",
+              "itr_returns",
+              "business_proof",
+              "profit_loss_statement",
+              "builder_noc",
+              "approved_building_plan"
+            ],
+            "submitted_documents": [
+              "pan_card",
+              "id_proof",
+              "address_proof",
+              "bank_statement"
+            ],
+            "missing_documents": [
+              "property_title_deed",
+              "sale_agreement",
+              "itr_returns",
+              "business_proof",
+              "profit_loss_statement",
+              "builder_noc",
+              "approved_building_plan"
+            ],
+            "document_status": "incomplete"
+          },
+          "assessment": {
+            "decision": "rejected",
+            "risk_level": "high",
+            "decision_reasons": [
+              "Credit score is below the acceptable prototype threshold of 650.",
+              "Debt-to-income ratio is above the prototype limit of 55%.",
+              "Required documents are missing: property_title_deed, sale_agreement, itr_returns, business_proof, profit_loss_statement, builder_noc, approved_building_plan."
+            ],
+            "risk_flags": [
+              "Credit score is below the acceptable prototype threshold of 650.",
+              "Debt-to-income ratio is above the prototype limit of 55%.",
+              "Requested loan amount is above the estimated eligible loan amount of 2189385.96.",
+              "Required documents are missing: property_title_deed, sale_agreement, itr_returns, business_proof, profit_loss_statement, builder_noc, approved_building_plan."
+            ],
+            "positive_factors": [
+              "Applicant meets the minimum age requirement.",
+              "Monthly income meets the minimum prototype requirement.",
+              "LTV ratio of 90.0% is within the prototype acceptable range.",
+              "Property legal clearance is marked as clear.",
+              "Property valuation status is marked as clear."
+            ],
+            "recommended_actions": [
+              "Improve credit profile before submitting a new application.",
+              "Reduce existing obligations or request a lower loan amount.",
+              "Consider reducing the requested loan amount by approximately 6810614.04.",
+              "Submit the missing documents: property_title_deed, sale_agreement, itr_returns, business_proof, profit_loss_statement, builder_noc, approved_building_plan."
+            ],
+            "underwriting_status": "rejected"
+          }
+        },
+        "assessment_summary": "I have completed the initial home loan assessment using affordability, credit, KYC and document checks.\n\nResult: Rejected\nRisk level: High\nEstimated EMI: ₹78,104.09\nDTI ratio: 94.25%\nFOIR ratio: 94.25%\nLTV ratio: 90.0%\nKYC status: verified\nCIBIL status: high_risk\nDocument status: Incomplete\nMissing documents: Property Title Deed, Sale Agreement, Itr Returns, Business Proof, Profit Loss Statement, Builder Noc, Approved Building Plan\n\nThis is an initial eligibility assessment only, not a final loan sanction.\n\nYou can ask me anything about this result, or type 'finish' to close the conversation."
+      }
+    }
+  ]
+}
