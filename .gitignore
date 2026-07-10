@@ -30,3 +30,12 @@ __pycache__/
 *_backup.py
 *_fixed_backup.py
 .DS_Store
+# Local/runtime files
+data/conversations/
+evals/results/
+.env
+__pycache__/
+*.pyc
+*_backup.py
+*_fixed_backup.py
+.DS_Store
