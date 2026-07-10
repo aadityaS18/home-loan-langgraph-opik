@@ -33,3 +33,31 @@ Install dependencies:
 
 ```bash
 pip install -r requirements.txt
+
+
+
+## Opik Cloud Tracing
+
+This project uses Opik Cloud to trace the LangGraph home-loan workflow.
+
+The complete loan application run is tracked as a parent trace:
+
+- `run_home_loan_application`
+
+Each LangGraph workflow step is tracked as a child span:
+
+- `collect_user_details`
+- `check_eligibility`
+- `check_affordability`
+- `check_documents`
+- `risk_assessment`
+- `make_decision`
+- `route_decision`
+- `approved_response`
+- `missing_docs_response`
+- `rejected_response`
+
+To configure Opik Cloud:
+
+```bash
+opik configure

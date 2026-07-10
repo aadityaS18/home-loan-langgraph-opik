@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: home-loan-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: home_loan
+    ports:
+      - "5433:5432"
+    volumes:
+      - home_loan_postgres_data:/var/lib/postgresql/data
+    networks:
+      - home_loan_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d home_loan"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    container_name: home-loan-streamlit
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/home_loan
+
+      # Opik
+      OPIK_URL_OVERRIDE: http://host.docker.internal:5173/api
+      OPIK_PROJECT_NAME: home-loan-langgraph
+
+      # Model provider
+      # Use ollama for local testing.
+      # Change MODEL_PROVIDER=groq in .env to use Groq backup.
+      MODEL_PROVIDER: ${MODEL_PROVIDER:-ollama}
+
+      # Ollama local model config
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+
+      # Groq backup config
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.1-8b-instant}
+
+    ports:
+      - "8501:8501"
+
+    volumes:
+      - .:/app
+
+    networks:
+      - home_loan_network
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    command: streamlit run app.py --server.address=0.0.0.0 --server.port=8501
+
+volumes:
+  home_loan_postgres_data:
+
+networks:
+  home_loan_network:
+    driver: bridge
