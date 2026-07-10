@@ -25,3 +25,10 @@ __pycache__/
 *.pyc
 .env
 *_backup.py
+
+data/
+evals/results/
+.env
+__pycache__/
+*.pyc
+*_backup.py
