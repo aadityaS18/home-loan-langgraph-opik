@@ -34,4 +34,8 @@ __pycache__/
 *.pyc
 
 # Environment files
+.envevals/results/
+data/conversations/
+__pycache__/
+*.pyc
 .env

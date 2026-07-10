@@ -21,6 +21,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import opik
+from opik import opik_context
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
@@ -40,6 +42,8 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql://postgres:postgres@localhost:5433/home_loan",
 )
+
+OPIK_PROJECT_NAME = os.getenv("OPIK_PROJECT_NAME", "home-loan-langgraph")
 
 
 def create_eval_application_id(case_id: str) -> str:
@@ -164,6 +168,133 @@ def extract_actual_tool_trace(final_state: dict[str, Any] | None) -> list[Any]:
     return final_state.get("tool_trace", [])
 
 
+def safe_reason(value: Any) -> str:
+    if value is None:
+        return ""
+
+    if isinstance(value, str):
+        return value
+
+    return json.dumps(value, default=str)[:1000]
+
+
+def log_opik_feedback_scores(evaluation_result: dict[str, Any]) -> None:
+    """
+    Add evaluation scores to the current Opik trace.
+
+    These scores appear in the Opik "Feedback scores" tab.
+    """
+    final_response_eval = evaluation_result["final_response_eval"]
+    trajectory_eval = evaluation_result["trajectory_eval"]
+    db_eval = evaluation_result["db_eval"]
+    overall_eval = evaluation_result["overall_eval"]
+
+    feedback_scores = [
+        {
+            "name": "final_response_score",
+            "value": float(final_response_eval["score"]),
+            "reason": safe_reason(
+                {
+                    "passed": final_response_eval["passed"],
+                    "missing_required_phrases": final_response_eval.get(
+                        "missing_required_phrases",
+                        [],
+                    ),
+                    "unsafe_phrases_found": final_response_eval.get(
+                        "unsafe_phrases_found",
+                        [],
+                    ),
+                }
+            ),
+        },
+        {
+            "name": "agent_trajectory_score",
+            "value": float(trajectory_eval["score"]),
+            "reason": safe_reason(
+                {
+                    "passed": trajectory_eval["passed"],
+                    "expected_tools": trajectory_eval.get("expected_tools", []),
+                    "actual_tools": trajectory_eval.get("actual_tools", []),
+                    "reason": trajectory_eval.get("reason", ""),
+                }
+            ),
+        },
+        {
+            "name": "db_persistence_score",
+            "value": float(db_eval["score"]),
+            "reason": safe_reason(
+                {
+                    "passed": db_eval["passed"],
+                    "failures": db_eval.get("failures", []),
+                    "status": db_eval.get("db_snapshot", {}).get("status"),
+                    "assessment_exists": db_eval.get("db_snapshot", {}).get(
+                        "assessment_exists"
+                    ),
+                    "tool_event_count": db_eval.get("db_snapshot", {}).get(
+                        "tool_event_count"
+                    ),
+                }
+            ),
+        },
+        {
+            "name": "overall_regression_score",
+            "value": float(overall_eval["score"]),
+            "reason": safe_reason(
+                {
+                    "passed": overall_eval["passed"],
+                    "component_scores": overall_eval.get("component_scores", {}),
+                }
+            ),
+        },
+    ]
+
+    metadata = {
+        "case_id": evaluation_result["case_id"],
+        "application_id": evaluation_result.get("application_id"),
+        "description": evaluation_result.get("description"),
+        "final_response_passed": final_response_eval["passed"],
+        "trajectory_passed": trajectory_eval["passed"],
+        "db_passed": db_eval["passed"],
+        "overall_passed": overall_eval["passed"],
+    }
+
+    try:
+        opik_context.update_current_trace(
+            feedback_scores=feedback_scores,
+            metadata=metadata,
+            tags=[
+                "home-loan-eval",
+                evaluation_result["case_id"],
+                "passed" if overall_eval["passed"] else "failed",
+            ],
+        )
+
+        print("[OPIK] Feedback scores logged to current trace.")
+
+    except TypeError:
+        # Some Opik versions may not support tags/metadata in this exact call.
+        try:
+            opik_context.update_current_trace(
+                feedback_scores=feedback_scores,
+            )
+            opik_context.update_current_trace(
+                metadata=metadata,
+            )
+
+            print("[OPIK] Feedback scores logged to current trace.")
+
+        except Exception as error:
+            print(f"[OPIK WARNING] Could not log feedback scores: {error}")
+
+    except Exception as error:
+        print(f"[OPIK WARNING] Could not log feedback scores: {error}")
+
+
+@opik.track(
+    name="home_loan_eval_case",
+    project_name=OPIK_PROJECT_NAME,
+    flush=True,
+)
 def run_single_eval_case(case: dict[str, Any]) -> dict[str, Any]:
     application_id = create_eval_application_id(case["case_id"])
 
@@ -216,6 +347,8 @@ def run_single_eval_case(case: dict[str, Any]) -> dict[str, Any]:
     evaluation_result["final_response"] = final_response
     evaluation_result["actual_tool_trace"] = actual_tool_trace
     evaluation_result["db_snapshot"] = db_snapshot
+
+    log_opik_feedback_scores(evaluation_result)
 
     print_evaluation_result(evaluation_result)
 
@@ -277,6 +410,7 @@ def save_results_to_json(results: list[dict[str, Any]]) -> None:
 def main() -> None:
     print("Starting Home Loan Agent Evaluations...")
     print(f"Using DATABASE_URL: {DATABASE_URL}")
+    print(f"Using OPIK_PROJECT_NAME: {OPIK_PROJECT_NAME}")
 
     case_filter = os.getenv("EVAL_CASE_ID")
 
